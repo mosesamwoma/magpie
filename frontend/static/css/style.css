@@ -20,21 +20,30 @@
     padding: 0;
 }
 
+html, body {
+    height: 100%;
+}
+
 body {
     font-family: var(--font);
     background: var(--bg);
     color: var(--text);
-    min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    padding: 4rem 1rem;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+}
+
+.page {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4rem 1rem 2rem;
 }
 
 .app {
     width: 100%;
     max-width: 620px;
+    flex: 1;
 }
 
 .app-header {
@@ -216,8 +225,11 @@ select option {
 }
 
 .app-footer {
+    width: 100%;
+    max-width: 620px;
     text-align: center;
     margin-top: 3rem;
+    padding-top: 1.5rem;
     font-size: 0.8rem;
 }
 
@@ -237,8 +249,8 @@ select option {
 }
 
 @media (max-width: 520px) {
-    body {
-        padding: 2rem 1rem;
+    .page {
+        padding: 2rem 1rem 1.5rem;
     }
 
     .input-row,
