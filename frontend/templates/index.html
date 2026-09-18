@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magpie — Video Downloader</title>
+    <link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+
+    <main class="app">
+        <h1>Magpie</h1>
+        <p class="tagline">Paste a video link. Pick a quality. Done.</p>
+
+        <div class="input-row">
+            <input
+                type="text"
+                id="linkBox"
+                placeholder="Paste a video link..."
+                autocomplete="off"
+                spellcheck="false"
+            >
+            <button id="goBtn">Go</button>
+        </div>
+
+        <p id="status" class="status"></p>
+
+        <div id="meta" hidden>
+            <img id="thumb" alt="">
+            <h2 id="title"></h2>
+            <p id="uploader" class="muted"></p>
+        </div>
+
+        <div id="formats" hidden>
+            <select id="formatSelect"></select>
+            <button id="downloadBtn">Download</button>
+        </div>
+    </main>
+
+    <script src="../static/js/app.js"></script>
+
+</body>
+</html>
