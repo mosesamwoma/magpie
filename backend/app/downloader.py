@@ -8,7 +8,12 @@ class Downloader:
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     def get_info(self, url: str) -> dict:
-        opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "cookiesfrombrowser": ("chrome",),
+        }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
@@ -45,6 +50,7 @@ class Downloader:
             "max_filesize": MAX_FILESIZE_MB * 1024 * 1024,
             "quiet": True,
             "no_warnings": True,
+            "cookiesfrombrowser": ("chrome",),
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
