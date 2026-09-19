@@ -74,29 +74,6 @@ If cookies still fail, make sure yt-dlp itself is up to date:
 pip install -U yt-dlp
 ```
 
-## Project structure
-
-```
-magpie/
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py     Flask app factory, cleanup scheduler
-│   │   ├── cleanup.py      Deletes downloads older than CLEANUP_AFTER_MINUTES
-│   │   ├── config.py       Environment-driven settings
-│   │   ├── downloader.py   yt-dlp wrapper: metadata lookup and downloading
-│   │   ├── routes.py       HTTP API
-│   │   └── utils.py        URL validation
-│   ├── run.py               Entry point
-│   └── requirements.txt
-├── frontend/
-│   ├── templates/index.html
-│   └── static/
-│       ├── css/style.css
-│       ├── js/app.js
-│       └── img/magpie.svg
-└── downloads/                Default download directory
-```
-
 ## Notes
 
 This tool is intended for personal use only. Respect copyright and the terms of service of any site you download from.
