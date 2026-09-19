@@ -12,19 +12,47 @@ class Downloader:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
+        raw_formats = info.get("formats", [])
+        raw_formats.sort(
+            key=lambda f: (-(f.get("height") or 0), -(f.get("abr") or f.get("tbr") or 0))
+        )
+
         formats, seen = [], set()
-        for f in info.get("formats", []):
+        for f in raw_formats:
             if f.get("vcodec") == "none" and f.get("acodec") == "none":
                 continue
-            label = f.get("format_note") or f.get("resolution") or f.get("format_id")
-            if label in seen:
+
+            if f.get("language") is not None and (f.get("language_preference") or -1) < 0:
                 continue
-            seen.add(label)
+
+            is_audio_only = f.get("vcodec") == "none"
+
+            if is_audio_only:
+                abr = f.get("abr")
+                label = f"{int(abr)} kbps" if abr else (f.get("format_note") or f.get("format_id"))
+                fmt_type = "audio"
+            else:
+                height = f.get("height")
+                if height:
+                    label = f"{height}p"
+                    fps = f.get("fps")
+                    if fps and fps > 30:
+                        label += str(int(fps))
+                else:
+                    label = f.get("format_note") or f.get("resolution") or f.get("format_id")
+                fmt_type = "video"
+
+            dedupe_key = (fmt_type, label, f.get("ext"))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+
             formats.append({
                 "id": f["format_id"],
                 "label": label,
                 "ext": f.get("ext"),
-                "filesize": f.get("filesize"),
+                "filesize": f.get("filesize") or f.get("filesize_approx"),
+                "type": fmt_type,
             })
 
         return {

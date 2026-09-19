@@ -172,9 +172,8 @@
     function populateFormats() {
         if (!currentInfo) return;
 
-        const list = mode === 'audio'
-            ? (currentInfo.audio_formats || [])
-            : (currentInfo.video_formats || []);
+        const all = currentInfo.formats || [];
+        const list = all.filter((f) => f.type === mode);
 
         formatSelect.innerHTML = '';
 
@@ -192,7 +191,7 @@
 
         list.forEach((fmt) => {
             const opt = document.createElement('option');
-            opt.value = fmt.format_id;
+            opt.value = fmt.id;
             const sizePart = fmt.filesize ? ` · ${formatBytes(fmt.filesize)}` : '';
             const extPart = fmt.ext ? ` (${fmt.ext})` : '';
             opt.textContent = `${fmt.label}${extPart}${sizePart}`;
@@ -220,8 +219,11 @@
         setStatus('Preparing download…');
 
         try {
-            const params = new URLSearchParams({ url, format_id: formatId, mode });
-            const res = await fetch(`/api/download?${params.toString()}`);
+            const res = await fetch('/api/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, format_id: formatId })
+            });
 
             if (!res.ok) {
                 const errBody = await res.json().catch(() => ({}));
