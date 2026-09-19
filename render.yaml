@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: magpie
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run:app
+    plan: free
+    envVars:
+      - key: FLASK_PORT
+        value: 10000
+      - key: FLASK_DEBUG
+        value: False
+      - key: DOWNLOAD_DIR
+        value: /tmp/downloads
+      - key: COOKIES_FROM_BROWSER
+        value: ""
