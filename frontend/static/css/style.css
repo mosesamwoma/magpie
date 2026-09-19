@@ -1,20 +1,20 @@
 :root {
-    --bg:           #0a0a0e;
-    --surface:      #14141a;
-    --surface-2:    #1c1c24;
-    --border:       #2a2a34;
-    --border-hover: #3a3a48;
-    --text:         #f0f0f5;
-    --muted:        #8b8b9a;
-    --accent:       #6d5ef8;
-    --accent-2:     #4f8cff;
-    --accent-hover: #7d6ffb;
-    --error:        #ff6b6b;
-    --success:      #4ade80;
-    --radius:       16px;
-    --radius-sm:    10px;
-    --font:         'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-display: 'Sora', var(--font);
+    --bg:           #15171a;
+    --surface:      #1d2023;
+    --surface-2:    #262a2e;
+    --border:       #33383d;
+    --border-hover: #444a51;
+    --text:         #edeef0;
+    --muted:        #8d949b;
+    --accent:       #2f8f7d;
+    --accent-hover: #38a68f;
+    --gold:         #b98d46;
+    --error:        #d9695f;
+    --success:      #4f9d72;
+    --radius:       14px;
+    --radius-sm:    9px;
+    --font:         'Public Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-display: 'Fraunces', Georgia, serif;
 }
 
 * {
@@ -33,44 +33,9 @@ body {
     color: var(--text);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
-    position: relative;
-}
-
-.bg-orbs {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    overflow: hidden;
-    pointer-events: none;
-}
-
-.orb {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(90px);
-    opacity: 0.28;
-}
-
-.orb-a {
-    width: 480px;
-    height: 480px;
-    top: -180px;
-    left: -120px;
-    background: radial-gradient(circle, var(--accent), transparent 70%);
-}
-
-.orb-b {
-    width: 420px;
-    height: 420px;
-    bottom: -160px;
-    right: -100px;
-    background: radial-gradient(circle, var(--accent-2), transparent 70%);
 }
 
 .page {
-    position: relative;
-    z-index: 1;
     min-height: 100%;
     display: flex;
     flex-direction: column;
@@ -96,32 +61,36 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
-    font-family: var(--font-display);
-    font-size: 1.85rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
     color: var(--accent);
 }
 
 .logo span {
-    background: linear-gradient(135deg, var(--text), var(--muted));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.9rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+}
+
+.logo-rule {
+    width: 34px;
+    height: 2px;
+    margin: 0.85rem auto 0.9rem;
+    background: var(--gold);
+    border-radius: 2px;
 }
 
 .tagline {
     color: var(--muted);
     font-size: 0.95rem;
-    margin-top: 0.6rem;
 }
 
 .card {
-    background: linear-gradient(180deg, var(--surface), var(--surface) 60%, var(--surface-2));
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 1.5rem;
-    box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.5);
 }
 
 .input-row {
@@ -153,12 +122,11 @@ input[type="text"] {
     font-size: 0.95rem;
     font-family: var(--font);
     outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
+    transition: border-color 0.15s;
 }
 
 input[type="text"]:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(109, 94, 248, 0.15);
 }
 
 input[type="text"]::placeholder {
@@ -175,7 +143,7 @@ input[type="text"]::placeholder {
     height: 2.1rem;
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 7px;
     color: var(--muted);
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
@@ -196,24 +164,23 @@ input[type="text"]::placeholder {
     justify-content: center;
     gap: 0.45rem;
     padding: 0.9rem 1.5rem;
-    border: none;
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
     font-size: 0.95rem;
     font-weight: 600;
     font-family: var(--font);
     cursor: pointer;
-    transition: background 0.15s, opacity 0.15s, transform 0.05s, box-shadow 0.15s;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
     white-space: nowrap;
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: white;
-    box-shadow: 0 8px 20px -8px rgba(109, 94, 248, 0.55);
+    background: var(--accent);
+    color: #0d1211;
 }
 
 .btn-primary:hover:not(:disabled) {
-    filter: brightness(1.08);
+    background: var(--accent-hover);
 }
 
 .btn-primary:active:not(:disabled) {
@@ -221,9 +188,8 @@ input[type="text"]::placeholder {
 }
 
 .btn:disabled {
-    opacity: 0.55;
+    opacity: 0.5;
     cursor: not-allowed;
-    box-shadow: none;
 }
 
 .btn-icon {
@@ -233,8 +199,8 @@ input[type="text"]::placeholder {
 .spinner {
     width: 15px;
     height: 15px;
-    border: 2px solid rgba(255, 255, 255, 0.35);
-    border-top-color: white;
+    border: 2px solid rgba(13, 18, 17, 0.35);
+    border-top-color: #0d1211;
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
 }
@@ -264,7 +230,7 @@ input[type="text"]::placeholder {
     padding: 0.6rem 0.75rem;
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 7px;
     color: var(--muted);
     font-family: var(--font);
     font-size: 0.88rem;
@@ -274,7 +240,7 @@ input[type="text"]::placeholder {
 }
 
 .mode-btn.is-active {
-    color: white;
+    color: #0d1211;
 }
 
 .mode-pill {
@@ -283,8 +249,8 @@ input[type="text"]::placeholder {
     left: 0.3rem;
     width: calc(50% - 0.3rem);
     height: calc(100% - 0.6rem);
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    border-radius: 8px;
+    background: var(--accent);
+    border-radius: 7px;
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -330,8 +296,8 @@ input[type="text"]::placeholder {
     position: absolute;
     right: 6px;
     bottom: 6px;
-    background: rgba(0, 0, 0, 0.75);
-    color: white;
+    background: rgba(13, 15, 17, 0.82);
+    color: var(--text);
     font-size: 0.72rem;
     font-weight: 600;
     padding: 0.15rem 0.4rem;
@@ -349,7 +315,7 @@ input[type="text"]::placeholder {
 
 .meta-info h2 {
     font-family: var(--font-display);
-    font-size: 1.05rem;
+    font-size: 1.1rem;
     font-weight: 600;
     margin-bottom: 0.4rem;
     line-height: 1.35;
@@ -437,7 +403,7 @@ select option {
 .progress-bar {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    background: var(--accent);
     border-radius: 999px;
     transition: width 0.15s ease;
 }
@@ -461,8 +427,6 @@ select option {
     margin-top: 3rem;
     padding-top: 1.5rem;
     font-size: 0.8rem;
-    position: relative;
-    z-index: 1;
 }
 
 .toast {
@@ -476,7 +440,7 @@ select option {
     padding: 0.75rem 1.1rem;
     border-radius: var(--radius-sm);
     font-size: 0.87rem;
-    box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.6);
     z-index: 50;
     opacity: 0;
     transition: opacity 0.2s ease, transform 0.2s ease;
@@ -488,11 +452,11 @@ select option {
 }
 
 .toast.error {
-    border-color: rgba(255, 107, 107, 0.4);
+    border-color: rgba(217, 105, 95, 0.5);
 }
 
 .toast.success {
-    border-color: rgba(74, 222, 128, 0.4);
+    border-color: rgba(79, 157, 114, 0.5);
 }
 
 [hidden] {

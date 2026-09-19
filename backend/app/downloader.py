@@ -1,16 +1,77 @@
-import yt_dlp
+import glob
 import os
 import uuid
-from .config import DOWNLOAD_DIR, MAX_FILESIZE_MB
+from typing import Optional
+
+import yt_dlp
+
+from .config import COOKIES_FILE, COOKIES_FROM_BROWSER, DOWNLOAD_DIR, MAX_FILESIZE_MB
+
+_INCOMPLETE_SUFFIXES = (".part", ".ytdl", ".part-Frag", ".temp")
+
+_AUTO_BROWSERS = (
+    "chrome", "edge", "brave", "chromium", "firefox", "vivaldi", "opera", "safari",
+)
+
 
 class Downloader:
     def __init__(self):
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+    def _base_opts(self) -> dict:
+        return {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+        }
+
+    def _cookie_variants(self):
+        if COOKIES_FILE:
+            yield {"cookiefile": COOKIES_FILE}
+            return
+
+        if COOKIES_FROM_BROWSER == "auto":
+            for browser in _AUTO_BROWSERS:
+                yield {"cookiesfrombrowser": (browser,)}
+            yield {}
+            return
+
+        if COOKIES_FROM_BROWSER:
+            yield {"cookiesfrombrowser": (COOKIES_FROM_BROWSER,)}
+            return
+
+        yield {}
+
+    def _run_with_cookie_fallback(self, run_once):
+        variants = list(self._cookie_variants())
+        last_error = None
+        for i, extra in enumerate(variants):
+            try:
+                return run_once(extra)
+            except Exception as e:
+                last_error = e
+                if i == len(variants) - 1:
+                    raise
+                continue
+        if last_error:
+            raise last_error
+
     def get_info(self, url: str) -> dict:
-        opts = {"quiet": True, "no_warnings": True, "skip_download": True}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+        def attempt(cookie_opts):
+            opts = {**self._base_opts(), **cookie_opts, "skip_download": True}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(url, download=False)
+
+        info = self._run_with_cookie_fallback(attempt)
+
+        if info is None:
+            raise ValueError("Could not read video info for that link")
+
+        if info.get("_type") == "playlist":
+            entries = info.get("entries") or []
+            if not entries:
+                raise ValueError("That link points to a playlist, not a single video")
+            info = entries[0]
 
         raw_formats = info.get("formats", [])
         raw_formats.sort(
@@ -63,17 +124,59 @@ class Downloader:
             "formats": formats,
         }
 
-    def download(self, url: str, format_id: str) -> str:
+    def download(self, url: str, format_id: str, mode: str = "video") -> str:
         job_id = str(uuid.uuid4())[:8]
-        outtmpl = os.path.join(DOWNLOAD_DIR, f"{job_id}_%(title)s.%(ext)s")
-        opts = {
-            "format": format_id or "bestvideo+bestaudio/best",
+        outtmpl = os.path.join(DOWNLOAD_DIR, f"{job_id}_%(title).150s.%(ext)s")
+
+        base_opts = {
+            **self._base_opts(),
             "outtmpl": outtmpl,
-            "merge_output_format": "mp4",
             "max_filesize": MAX_FILESIZE_MB * 1024 * 1024,
-            "quiet": True,
-            "no_warnings": True,
         }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            return ydl.prepare_filename(info)
+
+        if mode == "audio":
+            base_opts["format"] = format_id or "bestaudio/best"
+            base_opts["postprocessors"] = [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }]
+        else:
+            base_opts["format"] = format_id or "bestvideo+bestaudio/best"
+            base_opts["merge_output_format"] = "mp4"
+
+        def attempt(cookie_opts):
+            self._cleanup_job_files(job_id)
+            opts = {**base_opts, **cookie_opts}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.extract_info(url, download=True)
+
+        try:
+            self._run_with_cookie_fallback(attempt)
+        except Exception:
+            self._cleanup_job_files(job_id)
+            raise
+
+        result_path = self._find_finished_file(job_id)
+        if not result_path:
+            self._cleanup_job_files(job_id)
+            raise RuntimeError("Download finished but the output file could not be found")
+
+        return result_path
+
+    def _find_finished_file(self, job_id: str) -> Optional[str]:
+        candidates = [
+            p for p in glob.glob(os.path.join(DOWNLOAD_DIR, f"{job_id}_*"))
+            if os.path.isfile(p) and not p.endswith(_INCOMPLETE_SUFFIXES)
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=os.path.getmtime, reverse=True)
+        return candidates[0]
+
+    def _cleanup_job_files(self, job_id: str) -> None:
+        for p in glob.glob(os.path.join(DOWNLOAD_DIR, f"{job_id}_*")):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
