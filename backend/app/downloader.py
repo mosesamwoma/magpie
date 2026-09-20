@@ -36,6 +36,7 @@ class Downloader:
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "noprogress": True,
         }
 
     def _cookie_variants(self):
@@ -151,9 +152,9 @@ class Downloader:
             "formats": formats,
         }
 
-    def download(self, url: str, format_id: str, mode: str = "video") -> str:
-        job_id = str(uuid.uuid4())[:8]
-        outtmpl = os.path.join(DOWNLOAD_DIR, f"{job_id}_%(title).150s.%(ext)s")
+    def download(self, url: str, format_id: str, mode: str = "video", progress_hook=None):
+        file_id = str(uuid.uuid4())[:8]
+        outtmpl = os.path.join(DOWNLOAD_DIR, f"{file_id}_%(title).150s.%(ext)s")
 
         base_opts = {
             **self._base_opts(),
@@ -169,11 +170,15 @@ class Downloader:
                 "preferredquality": "192",
             }]
         else:
-            base_opts["format"] = format_id or "bestvideo+bestaudio/best"
+            base_opts["format"] = f"{format_id}+bestaudio/best" if format_id else "bestvideo+bestaudio/best"
             base_opts["merge_output_format"] = "mp4"
 
+        if progress_hook:
+            base_opts["progress_hooks"] = [progress_hook]
+            base_opts["postprocessor_hooks"] = [progress_hook]
+
         def attempt(cookie_opts):
-            self._cleanup_job_files(job_id)
+            self._cleanup_job_files(file_id)
             opts = {**base_opts, **cookie_opts}
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.extract_info(url, download=True)
@@ -181,19 +186,24 @@ class Downloader:
         try:
             self._run_with_cookie_fallback(attempt)
         except Exception as e:
-            self._cleanup_job_files(job_id)
+            self._cleanup_job_files(file_id)
             self._raise_friendly_error(e)
 
-        result_path = self._find_finished_file(job_id)
+        result_path = self._find_finished_file(file_id)
         if not result_path:
-            self._cleanup_job_files(job_id)
+            self._cleanup_job_files(file_id)
             raise RuntimeError("Download finished but the output file could not be found")
 
-        return result_path
+        display_name = os.path.basename(result_path)
+        prefix = f"{file_id}_"
+        if display_name.startswith(prefix):
+            display_name = display_name[len(prefix):]
 
-    def _find_finished_file(self, job_id: str) -> Optional[str]:
+        return result_path, display_name
+
+    def _find_finished_file(self, file_id: str) -> Optional[str]:
         candidates = [
-            p for p in glob.glob(os.path.join(DOWNLOAD_DIR, f"{job_id}_*"))
+            p for p in glob.glob(os.path.join(DOWNLOAD_DIR, f"{file_id}_*"))
             if os.path.isfile(p) and not p.endswith(_INCOMPLETE_SUFFIXES)
         ]
         if not candidates:
@@ -201,8 +211,8 @@ class Downloader:
         candidates.sort(key=os.path.getmtime, reverse=True)
         return candidates[0]
 
-    def _cleanup_job_files(self, job_id: str) -> None:
-        for p in glob.glob(os.path.join(DOWNLOAD_DIR, f"{job_id}_*")):
+    def _cleanup_job_files(self, file_id: str) -> None:
+        for p in glob.glob(os.path.join(DOWNLOAD_DIR, f"{file_id}_*")):
             try:
                 os.remove(p)
             except OSError:

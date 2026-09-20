@@ -5,6 +5,7 @@ from flask import Flask
 
 from .cleanup import cleanup_old_files
 from .config import CLEANUP_AFTER_MINUTES
+from .jobs import job_store
 from .routes import bp
 
 
@@ -16,6 +17,7 @@ def _start_cleanup_scheduler():
             cleanup_old_files()
         except OSError:
             pass
+        job_store.purge_stale(max_age_seconds=interval_seconds * 2)
         timer = threading.Timer(interval_seconds, run)
         timer.daemon = True
         timer.start()

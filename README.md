@@ -1,14 +1,15 @@
 # Magpie
 
-A self-hosted YouTube downloader. Paste a link, pick a quality, and get the video — or strip it down to just the audio as an MP3.
+A self-hosted YouTube downloader. Paste a link, pick a quality, and get the
+video — or strip it down to just the audio as an MP3.
 
 ## Features
 
 - Fetch a video's title, thumbnail, uploader, and duration before downloading anything
-- Download the full video at any available quality
-- Extract audio only, converted to a real MP3
+- Download the full video at any available quality, or extract audio as a real MP3
+- Live progress — real byte counts, speed, and ETA while the file downloads, not a fake progress bar
 - Single-page frontend, no build step, no frontend framework
-- Automatic cleanup of old downloads after a configurable time
+- Automatic cleanup of old downloads and abandoned jobs after a configurable time
 - Optional cookie authentication (a portable `cookies.txt`, or auto-detection across every major browser) to avoid YouTube's bot-detection errors
 
 ## Requirements
@@ -38,7 +39,7 @@ cp .env.example .env
 |--------------------------|------------|---------------------------------------------------------------------------------------------------|
 | `DOWNLOAD_DIR`            | `downloads`| Where downloaded files are stored                                                                 |
 | `MAX_FILESIZE_MB`         | `500`      | Max allowed download size                                                                          |
-| `CLEANUP_AFTER_MINUTES`   | `30`       | Auto-delete files older than this                                                                  |
+| `CLEANUP_AFTER_MINUTES`   | `30`       | Auto-delete files (and abandoned jobs) older than this                                             |
 | `FLASK_PORT`              | `5000`     | Port the app runs on                                                                                |
 | `FLASK_DEBUG`             | `False`    | Flask debug mode — leave off in production                                                          |
 | `COOKIES_FILE`            | *(empty)*  | Path to a `cookies.txt` file — portable across OS and browser, recommended if you need cookies at all |
@@ -48,32 +49,65 @@ cp .env.example .env
 
 ```bash
 cd backend
+source venv/bin/activate
 python run.py
 ```
 
-Visit `http://127.0.0.1:5000` in your browser. The app must be run through the Flask server, not opened as a local file, or the frontend won't load its CSS/JS correctly.
+Open `http://localhost:5000`.
 
-## Usage
-
-1. Paste a YouTube link into the input field.
-2. Click **Fetch** to load the video's title, thumbnail, and available qualities.
-3. Choose **Video** or **Audio (MP3)** mode.
-4. Pick a quality from the dropdown.
-5. Click **Download**.
-
-## Authentication
-
-YouTube periodically tightens bot detection, which can surface as a `Please sign in` error. If that happens, there are two ways to authenticate — pick one:
-
-- **`COOKIES_FILE`** (recommended): export a `cookies.txt` from any browser using an extension like "Get cookies.txt LOCALLY", then point `COOKIES_FILE` at it in `.env`. Works no matter which browser you used to export it or where the app itself runs — it's the only option that works if the app isn't on your own desktop.
-- **`COOKIES_FROM_BROWSER`**: set it to `auto` to automatically try every major browser (Chrome, Edge, Brave, Chromium, Firefox, Vivaldi, Opera, Safari) installed on the machine the app runs on, and use whichever one actually has a working session — or set it to one specific browser name to only try that one. This reads a live browser profile on the same machine the app runs on, so close the browser first if cookies fail to read (Chrome locks its cookie database while running; Firefox does not).
-
-If cookies still fail, make sure yt-dlp itself is up to date:
+For production, use gunicorn instead of the dev server (a `Procfile` is included for platforms like Heroku/Render):
 
 ```bash
-pip install -U yt-dlp
+gunicorn run:app --bind 0.0.0.0:$PORT
+```
+
+## How it works
+
+Downloading a video takes longer than any single HTTP request should stay
+open for, so it doesn't happen inside one:
+
+1. `POST /api/download` starts the download in a background thread and
+   immediately returns a `job_id`.
+2. The page polls `GET /api/progress/<job_id>` every ~700ms. yt-dlp reports
+   real byte counts, speed, and ETA via its `progress_hooks`, which land
+   straight in an in-memory job store and back out to the browser.
+3. Once the job's status is `finished`, the page fetches
+   `GET /api/file/<job_id>`, and the browser's own download manager takes
+   it from there. The job entry (and eventually the file itself) is cleaned
+   up afterward.
+
+Video downloads always merge in the best available audio track — most
+YouTube resolutions above 360p are video-only streams, so picking a
+resolution alone would otherwise produce a silent file.
+
+## Project structure
+
+```
+backend/
+  app/
+    __init__.py    Flask app factory, starts the cleanup scheduler
+    routes.py       /, /api/info, /api/download, /api/progress, /api/file
+    downloader.py   yt-dlp wrapper: info lookup + the actual download
+    jobs.py         thread-safe in-memory store for background job progress
+    cleanup.py      deletes downloaded files older than CLEANUP_AFTER_MINUTES
+    config.py       reads .env
+    utils.py        URL validation
+  run.py            entrypoint (dev server)
+  requirements.txt
+  Procfile          gunicorn command for deployment
+
+frontend/
+  templates/index.html
+  static/css/style.css
+  static/js/app.js  fetch info, poll progress, trigger the browser download
 ```
 
 ## Notes
 
-This tool is intended for personal use only. Respect copyright and the terms of service of any site you download from.
+- The job store is in-memory and per-process — fine for a single personal
+  instance. If you run multiple gunicorn workers, downloads and progress
+  polling for the same job need to land on the same worker; keep it to a
+  single worker/thread unless you swap the job store for something shared
+  (Redis, etc.).
+- Downloaded files are personal-use only — respect copyright and the terms
+  of service of whatever site you're pulling from.

@@ -199,6 +199,8 @@
         });
     }
 
+    const POLL_INTERVAL_MS = 700;
+
     async function startDownload() {
         if (!currentInfo) return;
 
@@ -213,10 +215,8 @@
         downloadBtn.disabled = true;
         formatSelect.disabled = true;
         progressWrap.hidden = false;
-        progressBar.style.width = '0%';
-        progressPercent.textContent = '0%';
-        progressSize.textContent = '';
-        setStatus('Preparing download…');
+        setProgress(null);
+        setStatus('Starting download…');
 
         try {
             const res = await fetch('/api/download', {
@@ -230,65 +230,101 @@
                 throw new Error(errBody.error || `Server responded with ${res.status}`);
             }
 
-            const totalBytes = Number(res.headers.get('Content-Length')) || 0;
-            const disposition = res.headers.get('Content-Disposition') || '';
-            const filenameMatch = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
-            const filename = filenameMatch
-                ? decodeURIComponent(filenameMatch[1])
-                : `${(currentInfo.title || 'download').replace(/[\\/:*?"<>|]/g, '')}.${mode === 'audio' ? 'mp3' : 'mp4'}`;
-
-            if (!res.body) {
-                const blob = await res.blob();
-                triggerSave(blob, filename);
-            } else {
-                const reader = res.body.getReader();
-                const chunks = [];
-                let received = 0;
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    chunks.push(value);
-                    received += value.length;
-
-                    if (totalBytes) {
-                        const pct = Math.min(100, Math.round((received / totalBytes) * 100));
-                        progressBar.style.width = `${pct}%`;
-                        progressPercent.textContent = `${pct}%`;
-                        progressSize.textContent = `${formatBytes(received)} / ${formatBytes(totalBytes)}`;
-                    } else {
-                        progressPercent.textContent = formatBytes(received);
-                        progressSize.textContent = '';
-                    }
-                }
-
-                const blob = new Blob(chunks);
-                progressBar.style.width = '100%';
-                progressPercent.textContent = '100%';
-                triggerSave(blob, filename);
-            }
+            const { job_id: jobId } = await res.json();
+            await pollUntilDone(jobId);
 
             setStatus('');
             showToast('Download complete', 'success');
+            triggerFileDownload(jobId);
         } catch (err) {
             setStatus(err.message || 'Download failed', 'error');
             showToast(err.message || 'Download failed', 'error');
         } finally {
             downloadBtn.disabled = false;
             formatSelect.disabled = false;
-            setTimeout(() => { progressWrap.hidden = true; }, 800);
+            setTimeout(() => { progressWrap.hidden = true; }, 900);
         }
     }
 
-    function triggerSave(blob, filename) {
-        const blobUrl = URL.createObjectURL(blob);
+    function pollUntilDone(jobId) {
+        return new Promise((resolve, reject) => {
+            const tick = async () => {
+                let data;
+                try {
+                    const res = await fetch(`/api/progress/${jobId}`);
+                    data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Lost track of that download');
+                } catch (err) {
+                    reject(err);
+                    return;
+                }
+
+                if (data.status === 'error') {
+                    reject(new Error(data.error || 'Download failed'));
+                    return;
+                }
+
+                renderProgress(data);
+
+                if (data.status === 'finished') {
+                    resolve();
+                    return;
+                }
+
+                setTimeout(tick, POLL_INTERVAL_MS);
+            };
+            tick();
+        });
+    }
+
+    function renderProgress(data) {
+        const downloaded = data.downloaded_bytes;
+        const total = data.total_bytes;
+
+        if (data.status === 'downloading' && total) {
+            const pct = Math.min(100, Math.round((downloaded / total) * 100));
+            setProgress(pct);
+            const parts = [`${formatBytes(downloaded)} / ${formatBytes(total)}`];
+            if (data.speed) parts.push(`${formatBytes(data.speed)}/s`);
+            if (Number.isFinite(data.eta)) parts.push(`ETA ${formatDuration(data.eta)}`);
+            progressSize.textContent = parts.join(' · ');
+            setStatus('Downloading…');
+        } else if (data.status === 'downloading') {
+            setProgress(null);
+            progressSize.textContent = downloaded ? formatBytes(downloaded) : '';
+            setStatus('Downloading…');
+        } else if (data.status === 'processing') {
+            setProgress(100);
+            progressSize.textContent = '';
+            setStatus(mode === 'audio' ? 'Converting to MP3…' : 'Merging video and audio…');
+        } else if (data.status === 'finished') {
+            setProgress(100);
+            progressSize.textContent = '';
+        } else {
+            setProgress(null);
+            setStatus('Starting download…');
+        }
+    }
+
+    function setProgress(pct) {
+        const indeterminate = pct === null;
+        progressWrap.classList.toggle('is-indeterminate', indeterminate);
+        if (indeterminate) {
+            progressBar.style.removeProperty('width');
+            progressPercent.textContent = '';
+        } else {
+            progressBar.style.width = `${pct}%`;
+            progressPercent.textContent = `${pct}%`;
+        }
+    }
+
+    function triggerFileDownload(jobId) {
         const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = filename;
+        a.href = `/api/file/${jobId}`;
+        a.rel = 'noopener';
         document.body.appendChild(a);
         a.click();
         a.remove();
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
     }
 
     fetchBtn.addEventListener('click', fetchInfo);
