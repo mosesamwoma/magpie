@@ -98,32 +98,6 @@ Video downloads always merge in the best available audio track — most
 YouTube resolutions above 360p are video-only streams, so picking a
 resolution alone would otherwise produce a silent file.
 
-## Project structure
-
-```
-Dockerfile
-docker-compose.yml
-.dockerignore
-
-backend/
-  app/
-    __init__.py    Flask app factory, starts the cleanup scheduler
-    routes.py       /, /api/info, /api/download, /api/progress(/stream),
-                     /api/cancel, /api/file
-    downloader.py   yt-dlp wrapper: info lookup + the actual download
-    jobs.py         thread-safe in-memory store for background job progress
-    cleanup.py      deletes downloaded files older than CLEANUP_AFTER_MINUTES
-    config.py       reads .env
-    utils.py        URL validation
-  run.py            entrypoint (dev server)
-  requirements.txt
-  Procfile          gunicorn command for deployment
-
-frontend/
-  templates/index.html
-  static/css/style.css
-  static/js/app.js  fetch info, track progress over SSE, trigger the
-                     browser download, remember preferences
 ```
 
 ## Notes
