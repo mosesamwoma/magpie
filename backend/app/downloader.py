@@ -7,7 +7,7 @@ from typing import Optional
 import yt_dlp
 from yt_dlp.utils import DownloadError
 
-from .config import COOKIES_FILE, COOKIES_FROM_BROWSER, DOWNLOAD_DIR, MAX_FILESIZE_MB
+from .config import COOKIES_FILE, COOKIES_FROM_BROWSER, DOWNLOAD_DIR, MAX_FILESIZE_MB, YTDLP_PROXY
 
 _INCOMPLETE_SUFFIXES = (".part", ".ytdl", ".part-Frag", ".temp")
 
@@ -32,11 +32,14 @@ class Downloader:
         return writable_path
 
     def _base_opts(self) -> dict:
-        return {
+        opts = {
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
         }
+        if YTDLP_PROXY:
+            opts["proxy"] = YTDLP_PROXY
+        return opts
 
     def _cookie_variants(self):
         if self._writable_cookies_file:

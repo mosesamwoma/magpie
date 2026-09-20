@@ -6,6 +6,8 @@ def cleanup_old_files():
     now = time.time()
     cutoff = CLEANUP_AFTER_MINUTES * 60
     for name in os.listdir(DOWNLOAD_DIR):
+        if name.startswith("."):
+            continue
         path = os.path.join(DOWNLOAD_DIR, name)
         if os.path.isfile(path) and now - os.path.getmtime(path) > cutoff:
             os.remove(path)
