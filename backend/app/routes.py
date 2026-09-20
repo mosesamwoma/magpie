@@ -1,7 +1,9 @@
+import json
 import os
 import threading
 
-from flask import Blueprint, jsonify, render_template, request, send_file
+from flask import Blueprint, Response, jsonify, render_template, request, send_file
+from yt_dlp.utils import DownloadCancelled
 
 from .downloader import Downloader
 from .jobs import job_store
@@ -71,8 +73,14 @@ def api_download():
 
     def run():
         try:
-            path, filename = dl.download(url, format_id, mode, progress_hook=on_progress)
+            path, filename = dl.download(
+                url, format_id, mode,
+                progress_hook=on_progress,
+                should_cancel=lambda: job_store.is_cancelled(job_id),
+            )
             job_store.update(job_id, status="finished", percent=100, filepath=path, filename=filename)
+        except DownloadCancelled:
+            job_store.update(job_id, status="cancelled", error=None)
         except Exception as e:
             job_store.update(job_id, status="error", error=str(e))
 
@@ -89,6 +97,50 @@ def api_progress(job_id):
     job.pop("filepath", None)
     job.pop("created_at", None)
     return jsonify(job)
+
+
+@bp.route("/api/progress/<job_id>/stream")
+def api_progress_stream(job_id):
+    def sse(payload: dict) -> str:
+        return f"data: {json.dumps(payload)}\n\n"
+
+    def generate():
+        while True:
+            job = job_store.get(job_id)
+            if job is None:
+                yield sse({"error": "Unknown or expired download"})
+                return
+
+            payload = {k: v for k, v in job.items() if k not in ("filepath", "created_at")}
+            yield sse(payload)
+
+            if job["status"] in ("finished", "error", "cancelled"):
+                return
+
+            job_store.wait(job_id, timeout=15)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@bp.route("/api/cancel/<job_id>", methods=["POST"])
+def api_cancel(job_id):
+    job = job_store.get(job_id)
+    if job is None:
+        return jsonify({"error": "Unknown or expired download"}), 404
+    if job["status"] in ("finished", "error", "cancelled"):
+        return jsonify({"error": "That download already finished"}), 409
+
+    job_store.request_cancel(job_id)
+    job_store.update(job_id, status="cancelling")
+    return jsonify({"status": "cancelling"})
 
 
 @bp.route("/api/file/<job_id>")

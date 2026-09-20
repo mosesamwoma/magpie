@@ -15,18 +15,42 @@
     const titleEl = document.getElementById('title');
     const uploaderEl = document.getElementById('uploader');
     const formatSelect = document.getElementById('format-select');
+    const formatBadges = document.getElementById('format-badges');
     const downloadBtn = document.getElementById('download');
 
     const progressWrap = document.getElementById('progress-wrap');
     const progressBar = document.getElementById('progress-bar');
     const progressPercent = document.getElementById('progress-percent');
     const progressSize = document.getElementById('progress-size');
+    const cancelBtn = document.getElementById('cancel-btn');
 
     const toastEl = document.getElementById('toast');
+
+    const STORAGE_KEYS = { MODE: 'magpie:mode' };
 
     let mode = 'video';
     let currentInfo = null;
     let toastTimer = null;
+    let activeJobId = null;
+
+    function readStorage(key) {
+        try {
+            return localStorage.getItem(key);
+        } catch {
+            return null;
+        }
+    }
+
+    function writeStorage(key, value) {
+        try {
+            localStorage.setItem(key, value);
+        } catch {
+        }
+    }
+
+    function qualityStorageKey(m) {
+        return `magpie:quality:${m}`;
+    }
 
     function setStatus(msg, type) {
         statusEl.textContent = msg || '';
@@ -80,6 +104,23 @@
         fetchBtn.querySelector('.spinner').hidden = !isBusy;
     }
 
+    function applyModeToUI() {
+        modeBtns.forEach((b) => {
+            const isActive = b.dataset.mode === mode;
+            b.classList.toggle('is-active', isActive);
+            b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        modeToggle.dataset.active = mode;
+    }
+
+    (function loadPreferences() {
+        const savedMode = readStorage(STORAGE_KEYS.MODE);
+        if (savedMode === 'audio' || savedMode === 'video') {
+            mode = savedMode;
+        }
+        applyModeToUI();
+    })();
+
     urlInput.addEventListener('input', () => {
         clearBtn.hidden = urlInput.value.length === 0;
     });
@@ -109,11 +150,8 @@
         btn.addEventListener('click', () => {
             if (btn.dataset.mode === mode) return;
             mode = btn.dataset.mode;
-            modeBtns.forEach((b) => {
-                b.classList.toggle('is-active', b === btn);
-                b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
-            });
-            modeToggle.dataset.active = mode;
+            applyModeToUI();
+            writeStorage(STORAGE_KEYS.MODE, mode);
             if (currentInfo) populateFormats();
         });
     });
@@ -184,6 +222,7 @@
             opt.selected = true;
             formatSelect.appendChild(opt);
             downloadBtn.disabled = true;
+            renderFormatBadges();
             return;
         }
 
@@ -197,9 +236,45 @@
             opt.textContent = `${fmt.label}${extPart}${sizePart}`;
             formatSelect.appendChild(opt);
         });
+
+        const savedLabel = readStorage(qualityStorageKey(mode));
+        if (savedLabel) {
+            const match = list.find((fmt) => fmt.label === savedLabel);
+            if (match) formatSelect.value = match.id;
+        }
+
+        renderFormatBadges();
     }
 
-    const POLL_INTERVAL_MS = 700;
+    function renderFormatBadges() {
+        formatBadges.innerHTML = '';
+
+        const fmt = (currentInfo?.formats || []).find((f) => f.id === formatSelect.value);
+        if (!fmt) {
+            formatBadges.hidden = true;
+            return;
+        }
+
+        const items = [];
+        if (fmt.ext) items.push({ text: fmt.ext.toUpperCase(), cls: 'badge-ext' });
+        if (fmt.codec) items.push({ text: fmt.codec, cls: 'badge-codec' });
+        if (fmt.filesize) items.push({ text: formatBytes(fmt.filesize), cls: '' });
+
+        items.forEach(({ text, cls }) => {
+            const span = document.createElement('span');
+            span.className = `badge ${cls}`.trim();
+            span.textContent = text;
+            formatBadges.appendChild(span);
+        });
+
+        formatBadges.hidden = items.length === 0;
+    }
+
+    formatSelect.addEventListener('change', () => {
+        const fmt = (currentInfo?.formats || []).find((f) => f.id === formatSelect.value);
+        if (fmt) writeStorage(qualityStorageKey(mode), fmt.label);
+        renderFormatBadges();
+    });
 
     async function startDownload() {
         if (!currentInfo) return;
@@ -215,6 +290,8 @@
         downloadBtn.disabled = true;
         formatSelect.disabled = true;
         progressWrap.hidden = false;
+        cancelBtn.hidden = false;
+        cancelBtn.disabled = false;
         setProgress(null);
         setStatus('Starting download…');
 
@@ -231,51 +308,77 @@
             }
 
             const { job_id: jobId } = await res.json();
-            await pollUntilDone(jobId);
+            activeJobId = jobId;
+            await trackProgress(jobId);
 
             setStatus('');
             showToast('Download complete', 'success');
             triggerFileDownload(jobId);
         } catch (err) {
-            setStatus(err.message || 'Download failed', 'error');
-            showToast(err.message || 'Download failed', 'error');
+            if (err.message === 'CANCELLED') {
+                setStatus('Download cancelled');
+                showToast('Download cancelled');
+            } else {
+                setStatus(err.message || 'Download failed', 'error');
+                showToast(err.message || 'Download failed', 'error');
+            }
         } finally {
             downloadBtn.disabled = false;
             formatSelect.disabled = false;
+            cancelBtn.hidden = true;
+            activeJobId = null;
             setTimeout(() => { progressWrap.hidden = true; }, 900);
         }
     }
 
-    function pollUntilDone(jobId) {
+    function trackProgress(jobId) {
         return new Promise((resolve, reject) => {
-            const tick = async () => {
+            const source = new EventSource(`/api/progress/${jobId}/stream`);
+
+            source.onmessage = (event) => {
                 let data;
                 try {
-                    const res = await fetch(`/api/progress/${jobId}`);
-                    data = await res.json();
-                    if (!res.ok) throw new Error(data.error || 'Lost track of that download');
-                } catch (err) {
-                    reject(err);
+                    data = JSON.parse(event.data);
+                } catch {
                     return;
                 }
 
-                if (data.status === 'error') {
-                    reject(new Error(data.error || 'Download failed'));
+                if (data.error) {
+                    source.close();
+                    reject(new Error(data.error));
                     return;
                 }
 
                 renderProgress(data);
 
                 if (data.status === 'finished') {
+                    source.close();
                     resolve();
-                    return;
+                } else if (data.status === 'cancelled') {
+                    source.close();
+                    reject(new Error('CANCELLED'));
+                } else if (data.status === 'error') {
+                    source.close();
+                    reject(new Error(data.error || 'Download failed'));
                 }
-
-                setTimeout(tick, POLL_INTERVAL_MS);
             };
-            tick();
+
+            source.onerror = () => {
+                source.close();
+                reject(new Error('Lost connection while downloading'));
+            };
         });
     }
+
+    cancelBtn.addEventListener('click', async () => {
+        if (!activeJobId) return;
+        cancelBtn.disabled = true;
+        setStatus('Cancelling…');
+        try {
+            await fetch(`/api/cancel/${activeJobId}`, { method: 'POST' });
+        } catch {
+        }
+    });
 
     function renderProgress(data) {
         const downloaded = data.downloaded_bytes;
@@ -297,6 +400,9 @@
             setProgress(100);
             progressSize.textContent = '';
             setStatus(mode === 'audio' ? 'Converting to MP3…' : 'Merging video and audio…');
+        } else if (data.status === 'cancelling') {
+            progressSize.textContent = '';
+            setStatus('Cancelling…');
         } else if (data.status === 'finished') {
             setProgress(100);
             progressSize.textContent = '';

@@ -1,0 +1,11 @@
+services:
+  magpie:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - path: backend/.env
+        required: false
+    volumes:
+      - ./downloads:/app/downloads
+    restart: unless-stopped

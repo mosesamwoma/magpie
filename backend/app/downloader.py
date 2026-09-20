@@ -5,7 +5,7 @@ import uuid
 from typing import Optional
 
 import yt_dlp
-from yt_dlp.utils import DownloadError
+from yt_dlp.utils import DownloadCancelled, DownloadError
 
 from .config import COOKIES_FILE, COOKIES_FROM_BROWSER, DOWNLOAD_DIR, MAX_FILESIZE_MB
 
@@ -14,6 +14,35 @@ _INCOMPLETE_SUFFIXES = (".part", ".ytdl", ".part-Frag", ".temp")
 _AUTO_BROWSERS = (
     "chrome", "edge", "brave", "chromium", "firefox", "vivaldi", "opera", "safari",
 )
+
+_VIDEO_CODEC_LABELS = (
+    ("av01", "AV1"),
+    ("vp09", "VP9"),
+    ("vp9", "VP9"),
+    ("avc1", "H.264"),
+    ("h264", "H.264"),
+    ("hev1", "HEVC"),
+    ("hvc1", "HEVC"),
+)
+
+_AUDIO_CODEC_LABELS = (
+    ("opus", "Opus"),
+    ("mp4a", "AAC"),
+    ("mp3", "MP3"),
+    ("vorbis", "Vorbis"),
+    ("ac-3", "AC-3"),
+    ("ec-3", "EAC-3"),
+)
+
+
+def _codec_label(codec: Optional[str], labels) -> Optional[str]:
+    if not codec or codec == "none":
+        return None
+    codec_lower = codec.lower()
+    for prefix, label in labels:
+        if codec_lower.startswith(prefix):
+            return label
+    return codec.split(".")[0].upper()
 
 
 class Downloader:
@@ -62,6 +91,8 @@ class Downloader:
         for i, extra in enumerate(variants):
             try:
                 return run_once(extra)
+            except DownloadCancelled:
+                raise
             except Exception as e:
                 last_error = e
                 if i == len(variants) - 1:
@@ -120,6 +151,7 @@ class Downloader:
                 abr = f.get("abr")
                 label = f"{int(abr)} kbps" if abr else (f.get("format_note") or f.get("format_id"))
                 fmt_type = "audio"
+                codec = _codec_label(f.get("acodec"), _AUDIO_CODEC_LABELS)
             else:
                 height = f.get("height")
                 if height:
@@ -130,6 +162,7 @@ class Downloader:
                 else:
                     label = f.get("format_note") or f.get("resolution") or f.get("format_id")
                 fmt_type = "video"
+                codec = _codec_label(f.get("vcodec"), _VIDEO_CODEC_LABELS)
 
             dedupe_key = (fmt_type, label, f.get("ext"))
             if dedupe_key in seen:
@@ -142,6 +175,7 @@ class Downloader:
                 "ext": f.get("ext"),
                 "filesize": f.get("filesize") or f.get("filesize_approx"),
                 "type": fmt_type,
+                "codec": codec,
             })
 
         return {
@@ -152,7 +186,7 @@ class Downloader:
             "formats": formats,
         }
 
-    def download(self, url: str, format_id: str, mode: str = "video", progress_hook=None):
+    def download(self, url: str, format_id: str, mode: str = "video", progress_hook=None, should_cancel=None):
         file_id = str(uuid.uuid4())[:8]
         outtmpl = os.path.join(DOWNLOAD_DIR, f"{file_id}_%(title).150s.%(ext)s")
 
@@ -173,9 +207,15 @@ class Downloader:
             base_opts["format"] = f"{format_id}+bestaudio/best" if format_id else "bestvideo+bestaudio/best"
             base_opts["merge_output_format"] = "mp4"
 
-        if progress_hook:
-            base_opts["progress_hooks"] = [progress_hook]
-            base_opts["postprocessor_hooks"] = [progress_hook]
+        def hook(d):
+            if should_cancel and should_cancel():
+                raise DownloadCancelled("Cancelled by user")
+            if progress_hook:
+                progress_hook(d)
+
+        if progress_hook or should_cancel:
+            base_opts["progress_hooks"] = [hook]
+            base_opts["postprocessor_hooks"] = [hook]
 
         def attempt(cookie_opts):
             self._cleanup_job_files(file_id)
@@ -185,6 +225,9 @@ class Downloader:
 
         try:
             self._run_with_cookie_fallback(attempt)
+        except DownloadCancelled:
+            self._cleanup_job_files(file_id)
+            raise
         except Exception as e:
             self._cleanup_job_files(file_id)
             self._raise_friendly_error(e)
