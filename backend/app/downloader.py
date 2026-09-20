@@ -1,5 +1,6 @@
 import glob
 import os
+import shutil
 import uuid
 from typing import Optional
 
@@ -17,6 +18,17 @@ _AUTO_BROWSERS = (
 class Downloader:
     def __init__(self):
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+        self._writable_cookies_file = self._prepare_writable_cookies_file()
+
+    def _prepare_writable_cookies_file(self) -> Optional[str]:
+        if not COOKIES_FILE:
+            return None
+        writable_path = os.path.join(DOWNLOAD_DIR, ".cookies.txt")
+        try:
+            shutil.copyfile(COOKIES_FILE, writable_path)
+        except OSError:
+            return None
+        return writable_path
 
     def _base_opts(self) -> dict:
         return {
@@ -26,8 +38,8 @@ class Downloader:
         }
 
     def _cookie_variants(self):
-        if COOKIES_FILE:
-            yield {"cookiefile": COOKIES_FILE}
+        if self._writable_cookies_file:
+            yield {"cookiefile": self._writable_cookies_file}
             return
 
         if COOKIES_FROM_BROWSER == "auto":
