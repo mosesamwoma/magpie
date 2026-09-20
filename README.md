@@ -98,8 +98,6 @@ Video downloads always merge in the best available audio track — most
 YouTube resolutions above 360p are video-only streams, so picking a
 resolution alone would otherwise produce a silent file.
 
-```
-
 ## Notes
 
 - The job store is in-memory and per-process — fine for a single personal
