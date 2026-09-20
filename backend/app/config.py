@@ -18,5 +18,3 @@ if COOKIES_FILE and not os.path.isabs(COOKIES_FILE):
 COOKIES_FROM_BROWSER = (os.getenv("COOKIES_FROM_BROWSER", "").strip() or None)
 if COOKIES_FROM_BROWSER:
     COOKIES_FROM_BROWSER = COOKIES_FROM_BROWSER.lower()
-
-YTDLP_PROXY = os.getenv("YTDLP_PROXY", "").strip() or None
