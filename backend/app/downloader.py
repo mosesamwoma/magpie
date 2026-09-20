@@ -5,6 +5,7 @@ import uuid
 from typing import Optional
 
 import yt_dlp
+from yt_dlp.utils import DownloadError
 
 from .config import COOKIES_FILE, COOKIES_FROM_BROWSER, DOWNLOAD_DIR, MAX_FILESIZE_MB
 
@@ -68,13 +69,27 @@ class Downloader:
         if last_error:
             raise last_error
 
+    def _raise_friendly_error(self, e: Exception):
+        if isinstance(e, DownloadError) and "Sign in to confirm" in str(e):
+            raise ValueError(
+                "YouTube is blocking this request. Try refreshing the cookies file, "
+                "or this video may be temporarily unavailable from this server."
+            ) from e
+        raise ValueError(
+            "Could not process that link. It may be private, region-locked, "
+            "or temporarily blocked by YouTube."
+        ) from e
+
     def get_info(self, url: str) -> dict:
         def attempt(cookie_opts):
             opts = {**self._base_opts(), **cookie_opts, "skip_download": True}
             with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=False)
 
-        info = self._run_with_cookie_fallback(attempt)
+        try:
+            info = self._run_with_cookie_fallback(attempt)
+        except Exception as e:
+            self._raise_friendly_error(e)
 
         if info is None:
             raise ValueError("Could not read video info for that link")
@@ -165,9 +180,9 @@ class Downloader:
 
         try:
             self._run_with_cookie_fallback(attempt)
-        except Exception:
+        except Exception as e:
             self._cleanup_job_files(job_id)
-            raise
+            self._raise_friendly_error(e)
 
         result_path = self._find_finished_file(job_id)
         if not result_path:
