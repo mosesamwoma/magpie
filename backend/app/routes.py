@@ -13,10 +13,6 @@ from .utils import is_valid_url
 bp = Blueprint("main", __name__)
 dl = Downloader()
 
-# Minimum gap between two "downloading" progress pushes for the same job.
-# yt-dlp's hook can fire many times a second on a fast connection; without
-# this, every one of those turns into its own SSE event for no visible
-# benefit to the user.
 _PROGRESS_PUSH_INTERVAL = 0.2
 
 

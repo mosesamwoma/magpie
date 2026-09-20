@@ -1,9 +1,6 @@
 (() => {
     'use strict';
 
-    // ---------------------------------------------------------------------
-    // Element references
-    // ---------------------------------------------------------------------
     const urlInput = document.getElementById('url');
     const pasteBtn = document.getElementById('paste-btn');
     const clearBtn = document.getElementById('clear-btn');
@@ -31,15 +28,8 @@
 
     const STORAGE_KEYS = { MODE: 'magpie:mode' };
 
-    // How long we'll tolerate the progress stream going quiet (including
-    // the browser silently retrying a dropped connection) before treating
-    // a download as lost. EventSource auto-reconnects on transient network
-    // blips, so a single 'error' event is not by itself fatal.
     const PROGRESS_STALE_MS = 45000;
 
-    // ---------------------------------------------------------------------
-    // State
-    // ---------------------------------------------------------------------
     let mode = 'video';
     let currentInfo = null;
     let toastTimer = null;
@@ -58,8 +48,6 @@
         try {
             localStorage.setItem(key, value);
         } catch {
-            // Storage can be unavailable (private browsing, quota) — the
-            // app works fine without remembering preferences.
         }
     }
 
@@ -67,9 +55,6 @@
         return `magpie:quality:${m}`;
     }
 
-    // ---------------------------------------------------------------------
-    // Small UI helpers
-    // ---------------------------------------------------------------------
     function setStatus(msg, type) {
         statusEl.textContent = msg || '';
         statusEl.className = 'status' + (type ? ` ${type}` : '');
@@ -116,19 +101,10 @@
         }
     }
 
-    // Fetching info and running a download are mutually exclusive: without
-    // this, pressing Enter (which bypasses the fetch button's disabled
-    // state) while a download is streaming would silently swap out
-    // currentInfo and hide the in-progress download's own UI — the
-    // download itself would keep running unseen in the background and
-    // then pop a surprise file-save dialog once it finished.
     function isBusy() {
         return isFetchingInfo || activeJobId !== null;
     }
 
-    // Keep every control's disabled state in sync with what's actually
-    // safe to click right now, in one place, so button state can't drift
-    // out of sync with the flags that gate the async functions themselves.
     function syncControls() {
         const busy = isBusy();
         fetchBtn.disabled = busy;
@@ -165,9 +141,6 @@
         applyModeToUI();
     })();
 
-    // ---------------------------------------------------------------------
-    // Input row: clear / paste
-    // ---------------------------------------------------------------------
     urlInput.addEventListener('input', () => {
         clearBtn.hidden = urlInput.value.length === 0;
     });
@@ -213,9 +186,6 @@
         }
     });
 
-    // ---------------------------------------------------------------------
-    // Mode toggle (video / audio)
-    // ---------------------------------------------------------------------
     modeBtns.forEach((btn) => {
         btn.addEventListener('click', () => {
             if (btn.dataset.mode === mode || isBusy()) return;
@@ -226,9 +196,6 @@
         });
     });
 
-    // ---------------------------------------------------------------------
-    // Fetch video info
-    // ---------------------------------------------------------------------
     async function fetchInfo() {
         const url = urlInput.value.trim();
 
@@ -241,8 +208,6 @@
             setStatus('That doesn\'t look like a valid link', 'error');
             return;
         }
-        // Defensive re-entrancy guard: the Enter key calls this directly
-        // and isn't blocked by the fetch button's disabled state.
         if (isBusy()) {
             showToast(activeJobId ? 'A download is already in progress' : 'Still fetching — one moment', 'error');
             return;
@@ -358,9 +323,6 @@
         renderFormatBadges();
     });
 
-    // ---------------------------------------------------------------------
-    // Download
-    // ---------------------------------------------------------------------
     async function startDownload() {
         if (!currentInfo || isBusy()) return;
 
@@ -372,7 +334,7 @@
             return;
         }
 
-        activeJobId = 'pending'; // placeholder so isBusy() is true the instant we start
+        activeJobId = 'pending';
         syncControls();
         progressWrap.hidden = false;
         cancelBtn.hidden = false;
@@ -468,11 +430,6 @@
             };
 
             source.onerror = () => {
-                // EventSource auto-reconnects on a transient network drop
-                // (readyState goes to CONNECTING, not CLOSED). Only treat
-                // it as fatal once the browser itself has given up, or
-                // once the stale timer decides the silence has gone on
-                // too long.
                 if (source.readyState === EventSource.CLOSED) {
                     clearStaleTimer();
                     reject(new Error('Lost connection while downloading'));
@@ -488,8 +445,6 @@
         try {
             await fetch(`/api/cancel/${activeJobId}`, { method: 'POST' });
         } catch {
-            // The SSE stream will still surface the eventual job state (or
-            // its own connection error) — nothing further to do here.
         }
     });
 
@@ -546,9 +501,6 @@
         a.remove();
     }
 
-    // ---------------------------------------------------------------------
-    // Wire up
-    // ---------------------------------------------------------------------
     fetchBtn.addEventListener('click', fetchInfo);
     downloadBtn.addEventListener('click', startDownload);
 
