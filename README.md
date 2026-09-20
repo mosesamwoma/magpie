@@ -1,7 +1,6 @@
 # Magpie
 
-A self-hosted YouTube downloader. Paste a link, pick a quality, and get the
-video — or strip it down to just the audio as an MP3.
+A self-hosted YouTube downloader. Paste a link, pick a quality, and get the video — or strip it down to just the audio as an MP3.
 
 ## Features
 
@@ -63,51 +62,15 @@ gunicorn run:app --bind 0.0.0.0:$PORT
 
 ## How it works
 
-Downloading a video takes longer than any single HTTP request should stay
-open for, so it doesn't happen inside one:
+Downloading a video takes longer than any single HTTP request should stay open for, so it doesn't happen inside one:
 
-1. `POST /api/download` starts the download in a background thread and
-   immediately returns a `job_id`.
-2. The page polls `GET /api/progress/<job_id>` every ~700ms. yt-dlp reports
-   real byte counts, speed, and ETA via its `progress_hooks`, which land
-   straight in an in-memory job store and back out to the browser.
-3. Once the job's status is `finished`, the page fetches
-   `GET /api/file/<job_id>`, and the browser's own download manager takes
-   it from there. The job entry (and eventually the file itself) is cleaned
-   up afterward.
+1. `POST /api/download` starts the download in a background thread and immediately returns a `job_id`.
+2. The page polls `GET /api/progress/<job_id>` every ~700ms. yt-dlp reports real byte counts, speed, and ETA via its `progress_hooks`, which land straight in an in-memory job store and back out to the browser.
+3. Once the job's status is `finished`, the page fetches `GET /api/file/<job_id>`, and the browser's own download manager takes it from there. The job entry (and eventually the file itself) is cleaned up afterward.
 
-Video downloads always merge in the best available audio track — most
-YouTube resolutions above 360p are video-only streams, so picking a
-resolution alone would otherwise produce a silent file.
-
-## Project structure
-
-```
-backend/
-  app/
-    __init__.py    Flask app factory, starts the cleanup scheduler
-    routes.py       /, /api/info, /api/download, /api/progress, /api/file
-    downloader.py   yt-dlp wrapper: info lookup + the actual download
-    jobs.py         thread-safe in-memory store for background job progress
-    cleanup.py      deletes downloaded files older than CLEANUP_AFTER_MINUTES
-    config.py       reads .env
-    utils.py        URL validation
-  run.py            entrypoint (dev server)
-  requirements.txt
-  Procfile          gunicorn command for deployment
-
-frontend/
-  templates/index.html
-  static/css/style.css
-  static/js/app.js  fetch info, poll progress, trigger the browser download
-```
+Video downloads always merge in the best available audio track — most YouTube resolutions above 360p are video-only streams, so picking a resolution alone would otherwise produce a silent file.
 
 ## Notes
 
-- The job store is in-memory and per-process — fine for a single personal
-  instance. If you run multiple gunicorn workers, downloads and progress
-  polling for the same job need to land on the same worker; keep it to a
-  single worker/thread unless you swap the job store for something shared
-  (Redis, etc.).
-- Downloaded files are personal-use only — respect copyright and the terms
-  of service of whatever site you're pulling from.
+- The job store is in-memory and per-process — fine for a single personal instance. If you run multiple gunicorn workers, downloads and progress polling for the same job need to land on the same worker; keep it to a single worker/thread unless you swap the job store for something shared (Redis, etc.).
+- Downloaded files are personal-use only — respect copyright and the terms of service of whatever site you're pulling from.
