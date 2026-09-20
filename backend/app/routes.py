@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import time
 
 from flask import Blueprint, Response, jsonify, render_template, request, send_file
 from yt_dlp.utils import DownloadCancelled
@@ -11,6 +12,12 @@ from .utils import is_valid_url
 
 bp = Blueprint("main", __name__)
 dl = Downloader()
+
+# Minimum gap between two "downloading" progress pushes for the same job.
+# yt-dlp's hook can fire many times a second on a fast connection; without
+# this, every one of those turns into its own SSE event for no visible
+# benefit to the user.
+_PROGRESS_PUSH_INTERVAL = 0.2
 
 
 @bp.route("/")
@@ -49,16 +56,25 @@ def api_download():
         mode = "video"
 
     job_id = job_store.create()
+    last_push_at = 0.0
 
     def on_progress(d):
+        nonlocal last_push_at
         status = d.get("status")
 
         if status == "downloading":
+            now = time.monotonic()
+            if now - last_push_at < _PROGRESS_PUSH_INTERVAL:
+                return
+            last_push_at = now
+
             downloaded = d.get("downloaded_bytes") or 0
             total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            percent = round(downloaded / total * 100) if total else 0
             job_store.update(
                 job_id,
                 status="downloading",
+                percent=percent,
                 downloaded_bytes=downloaded,
                 total_bytes=total,
                 speed=d.get("speed"),

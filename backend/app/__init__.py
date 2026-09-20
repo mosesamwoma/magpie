@@ -15,12 +15,23 @@ def _start_cleanup_scheduler():
     def run():
         try:
             cleanup_old_files()
-        except OSError:
+            job_store.purge_stale(max_age_seconds=interval_seconds * 2)
+        except Exception:
+            # A single bad sweep (missing dir, permission error, anything)
+            # must never stop future cleanups from being scheduled.
             pass
+        finally:
+            timer = threading.Timer(interval_seconds, run)
+            timer.daemon = True
+            timer.start()
+
+    # Sweep once immediately so leftovers from before a restart don't sit
+    # around for up to CLEANUP_AFTER_MINUTES before the first scheduled run.
+    try:
+        cleanup_old_files()
         job_store.purge_stale(max_age_seconds=interval_seconds * 2)
-        timer = threading.Timer(interval_seconds, run)
-        timer.daemon = True
-        timer.start()
+    except Exception:
+        pass
 
     initial_timer = threading.Timer(interval_seconds, run)
     initial_timer.daemon = True

@@ -154,6 +154,12 @@ input[type="text"]::placeholder {
     color: var(--text);
 }
 
+.icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 #clear-btn {
     right: 2.6rem;
 }
@@ -241,6 +247,11 @@ input[type="text"]::placeholder {
 
 .mode-btn.is-active {
     color: #0d1211;
+}
+
+.mode-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .mode-pill {
@@ -373,6 +384,11 @@ select {
 
 select:focus {
     border-color: var(--accent);
+}
+
+select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 select option {

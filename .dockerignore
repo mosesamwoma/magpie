@@ -1,0 +1,29 @@
+# Version control
+.git
+.gitignore
+# Local envs / secrets — the image should never bake in a real .env
+backend/venv/
+backend/.venv/
+backend/.env
+backend/.env.*
+!backend/.env.example
+# Python artifacts
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+# Runtime downloads — never needed at build time, and ./downloads is
+# volume-mounted at runtime anyway
+downloads/*
+!downloads/.gitkeep
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+# OS cruft
+.DS_Store
+Thumbs.db
+# Logs
+*.log
+# Docs not needed inside the image
+README.md

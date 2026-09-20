@@ -1,6 +1,9 @@
 (() => {
     'use strict';
 
+    // ---------------------------------------------------------------------
+    // Element references
+    // ---------------------------------------------------------------------
     const urlInput = document.getElementById('url');
     const pasteBtn = document.getElementById('paste-btn');
     const clearBtn = document.getElementById('clear-btn');
@@ -28,10 +31,20 @@
 
     const STORAGE_KEYS = { MODE: 'magpie:mode' };
 
+    // How long we'll tolerate the progress stream going quiet (including
+    // the browser silently retrying a dropped connection) before treating
+    // a download as lost. EventSource auto-reconnects on transient network
+    // blips, so a single 'error' event is not by itself fatal.
+    const PROGRESS_STALE_MS = 45000;
+
+    // ---------------------------------------------------------------------
+    // State
+    // ---------------------------------------------------------------------
     let mode = 'video';
     let currentInfo = null;
     let toastTimer = null;
     let activeJobId = null;
+    let isFetchingInfo = false;
 
     function readStorage(key) {
         try {
@@ -45,6 +58,8 @@
         try {
             localStorage.setItem(key, value);
         } catch {
+            // Storage can be unavailable (private browsing, quota) — the
+            // app works fine without remembering preferences.
         }
     }
 
@@ -52,6 +67,9 @@
         return `magpie:quality:${m}`;
     }
 
+    // ---------------------------------------------------------------------
+    // Small UI helpers
+    // ---------------------------------------------------------------------
     function setStatus(msg, type) {
         statusEl.textContent = msg || '';
         statusEl.className = 'status' + (type ? ` ${type}` : '');
@@ -98,10 +116,36 @@
         }
     }
 
-    function setBusy(isBusy) {
-        fetchBtn.disabled = isBusy;
-        fetchBtn.querySelector('.btn-label').textContent = isBusy ? 'Fetching…' : 'Fetch';
-        fetchBtn.querySelector('.spinner').hidden = !isBusy;
+    // Fetching info and running a download are mutually exclusive: without
+    // this, pressing Enter (which bypasses the fetch button's disabled
+    // state) while a download is streaming would silently swap out
+    // currentInfo and hide the in-progress download's own UI — the
+    // download itself would keep running unseen in the background and
+    // then pop a surprise file-save dialog once it finished.
+    function isBusy() {
+        return isFetchingInfo || activeJobId !== null;
+    }
+
+    // Keep every control's disabled state in sync with what's actually
+    // safe to click right now, in one place, so button state can't drift
+    // out of sync with the flags that gate the async functions themselves.
+    function syncControls() {
+        const busy = isBusy();
+        fetchBtn.disabled = busy;
+        pasteBtn.disabled = busy;
+        clearBtn.disabled = busy;
+        modeBtns.forEach((b) => { b.disabled = busy; });
+
+        const hasSelectableFormat = formatSelect.options.length > 0 && !formatSelect.options[0]?.disabled;
+        downloadBtn.disabled = busy || !currentInfo || !hasSelectableFormat;
+        formatSelect.disabled = busy || !hasSelectableFormat;
+    }
+
+    function setFetching(value) {
+        isFetchingInfo = value;
+        fetchBtn.querySelector('.btn-label').textContent = value ? 'Fetching…' : 'Fetch';
+        fetchBtn.querySelector('.spinner').hidden = !value;
+        syncControls();
     }
 
     function applyModeToUI() {
@@ -121,34 +165,60 @@
         applyModeToUI();
     })();
 
+    // ---------------------------------------------------------------------
+    // Input row: clear / paste
+    // ---------------------------------------------------------------------
     urlInput.addEventListener('input', () => {
         clearBtn.hidden = urlInput.value.length === 0;
     });
 
+    urlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            fetchInfo();
+        } else if (e.key === 'Escape' && urlInput.value && !isBusy()) {
+            e.preventDefault();
+            resetInput();
+        }
+    });
+
     clearBtn.addEventListener('click', () => {
+        if (isBusy()) return;
+        resetInput();
+    });
+
+    function resetInput() {
         urlInput.value = '';
         clearBtn.hidden = true;
         urlInput.focus();
         resultSection.hidden = true;
+        currentInfo = null;
         setStatus('');
-    });
+        syncControls();
+    }
 
     pasteBtn.addEventListener('click', async () => {
+        if (!navigator.clipboard?.readText) {
+            showToast('Clipboard access isn\'t available — paste manually', 'error');
+            return;
+        }
         try {
-            const text = await navigator.clipboard.readText();
-            if (text) {
-                urlInput.value = text.trim();
-                clearBtn.hidden = false;
-                urlInput.focus();
-            }
+            const text = (await navigator.clipboard.readText()).trim();
+            if (!text) return;
+            urlInput.value = text;
+            clearBtn.hidden = false;
+            urlInput.focus();
         } catch {
             showToast('Could not read clipboard — paste manually', 'error');
         }
     });
 
+    // ---------------------------------------------------------------------
+    // Mode toggle (video / audio)
+    // ---------------------------------------------------------------------
     modeBtns.forEach((btn) => {
         btn.addEventListener('click', () => {
-            if (btn.dataset.mode === mode) return;
+            if (btn.dataset.mode === mode || isBusy()) return;
             mode = btn.dataset.mode;
             applyModeToUI();
             writeStorage(STORAGE_KEYS.MODE, mode);
@@ -156,19 +226,29 @@
         });
     });
 
+    // ---------------------------------------------------------------------
+    // Fetch video info
+    // ---------------------------------------------------------------------
     async function fetchInfo() {
         const url = urlInput.value.trim();
 
         if (!url) {
             setStatus('Paste a link first', 'error');
+            urlInput.focus();
             return;
         }
         if (!isLikelyUrl(url)) {
             setStatus('That doesn\'t look like a valid link', 'error');
             return;
         }
+        // Defensive re-entrancy guard: the Enter key calls this directly
+        // and isn't blocked by the fetch button's disabled state.
+        if (isBusy()) {
+            showToast(activeJobId ? 'A download is already in progress' : 'Still fetching — one moment', 'error');
+            return;
+        }
 
-        setBusy(true);
+        setFetching(true);
         setStatus('Fetching video info…');
         resultSection.hidden = true;
         progressWrap.hidden = true;
@@ -177,7 +257,7 @@
             const res = await fetch('/api/info', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url })
+                body: JSON.stringify({ url }),
             });
 
             if (!res.ok) {
@@ -192,9 +272,12 @@
             setStatus('');
             resultSection.hidden = false;
         } catch (err) {
-            setStatus(err.message || 'Could not fetch that link', 'error');
+            const message = err instanceof TypeError
+                ? 'Could not reach the server — check your connection'
+                : (err.message || 'Could not fetch that link');
+            setStatus(message, 'error');
         } finally {
-            setBusy(false);
+            setFetching(false);
         }
     }
 
@@ -202,7 +285,7 @@
         titleEl.textContent = data.title || 'Untitled';
         uploaderEl.textContent = data.uploader || '';
         thumbEl.src = data.thumbnail || '';
-        thumbEl.alt = data.title || 'Thumbnail';
+        thumbEl.alt = data.title ? `Thumbnail for ${data.title}` : 'Video thumbnail';
         durationBadge.textContent = formatDuration(data.duration);
         durationBadge.hidden = data.duration === undefined || data.duration === null;
     }
@@ -221,12 +304,10 @@
             opt.disabled = true;
             opt.selected = true;
             formatSelect.appendChild(opt);
-            downloadBtn.disabled = true;
             renderFormatBadges();
+            syncControls();
             return;
         }
-
-        downloadBtn.disabled = false;
 
         list.forEach((fmt) => {
             const opt = document.createElement('option');
@@ -244,6 +325,7 @@
         }
 
         renderFormatBadges();
+        syncControls();
     }
 
     function renderFormatBadges() {
@@ -276,8 +358,11 @@
         renderFormatBadges();
     });
 
+    // ---------------------------------------------------------------------
+    // Download
+    // ---------------------------------------------------------------------
     async function startDownload() {
-        if (!currentInfo) return;
+        if (!currentInfo || isBusy()) return;
 
         const url = urlInput.value.trim();
         const formatId = formatSelect.value;
@@ -287,8 +372,8 @@
             return;
         }
 
-        downloadBtn.disabled = true;
-        formatSelect.disabled = true;
+        activeJobId = 'pending'; // placeholder so isBusy() is true the instant we start
+        syncControls();
         progressWrap.hidden = false;
         cancelBtn.hidden = false;
         cancelBtn.disabled = false;
@@ -299,7 +384,7 @@
             const res = await fetch('/api/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url, format_id: formatId, mode })
+                body: JSON.stringify({ url, format_id: formatId, mode }),
             });
 
             if (!res.ok) {
@@ -319,14 +404,16 @@
                 setStatus('Download cancelled');
                 showToast('Download cancelled');
             } else {
-                setStatus(err.message || 'Download failed', 'error');
-                showToast(err.message || 'Download failed', 'error');
+                const message = err instanceof TypeError
+                    ? 'Lost connection to the server'
+                    : (err.message || 'Download failed');
+                setStatus(message, 'error');
+                showToast(message, 'error');
             }
         } finally {
-            downloadBtn.disabled = false;
-            formatSelect.disabled = false;
             cancelBtn.hidden = true;
             activeJobId = null;
+            syncControls();
             setTimeout(() => { progressWrap.hidden = true; }, 900);
         }
     }
@@ -334,8 +421,21 @@
     function trackProgress(jobId) {
         return new Promise((resolve, reject) => {
             const source = new EventSource(`/api/progress/${jobId}/stream`);
+            let staleTimer = null;
+
+            const clearStaleTimer = () => clearTimeout(staleTimer);
+            const resetStaleTimer = () => {
+                clearStaleTimer();
+                staleTimer = setTimeout(() => {
+                    source.close();
+                    reject(new Error('Lost connection while downloading'));
+                }, PROGRESS_STALE_MS);
+            };
+            resetStaleTimer();
 
             source.onmessage = (event) => {
+                resetStaleTimer();
+
                 let data;
                 try {
                     data = JSON.parse(event.data);
@@ -344,6 +444,7 @@
                 }
 
                 if (data.error) {
+                    clearStaleTimer();
                     source.close();
                     reject(new Error(data.error));
                     return;
@@ -352,31 +453,43 @@
                 renderProgress(data);
 
                 if (data.status === 'finished') {
+                    clearStaleTimer();
                     source.close();
                     resolve();
                 } else if (data.status === 'cancelled') {
+                    clearStaleTimer();
                     source.close();
                     reject(new Error('CANCELLED'));
                 } else if (data.status === 'error') {
+                    clearStaleTimer();
                     source.close();
                     reject(new Error(data.error || 'Download failed'));
                 }
             };
 
             source.onerror = () => {
-                source.close();
-                reject(new Error('Lost connection while downloading'));
+                // EventSource auto-reconnects on a transient network drop
+                // (readyState goes to CONNECTING, not CLOSED). Only treat
+                // it as fatal once the browser itself has given up, or
+                // once the stale timer decides the silence has gone on
+                // too long.
+                if (source.readyState === EventSource.CLOSED) {
+                    clearStaleTimer();
+                    reject(new Error('Lost connection while downloading'));
+                }
             };
         });
     }
 
     cancelBtn.addEventListener('click', async () => {
-        if (!activeJobId) return;
+        if (!activeJobId || activeJobId === 'pending') return;
         cancelBtn.disabled = true;
         setStatus('Cancelling…');
         try {
             await fetch(`/api/cancel/${activeJobId}`, { method: 'POST' });
         } catch {
+            // The SSE stream will still surface the eventual job state (or
+            // its own connection error) — nothing further to do here.
         }
     });
 
@@ -433,13 +546,11 @@
         a.remove();
     }
 
+    // ---------------------------------------------------------------------
+    // Wire up
+    // ---------------------------------------------------------------------
     fetchBtn.addEventListener('click', fetchInfo);
     downloadBtn.addEventListener('click', startDownload);
 
-    urlInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            fetchInfo();
-        }
-    });
+    syncControls();
 })();
