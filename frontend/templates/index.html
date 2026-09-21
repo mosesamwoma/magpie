@@ -3,8 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Paste a YouTube link, pick a quality, and download the video or just the audio as an MP3.">
+<meta name="theme-color" content="#15171a">
 <title>Magpie — Video &amp; Audio Downloader</title>
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/magpie.svg') }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Magpie">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;1,600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -92,6 +99,12 @@
         <div class="meta-info">
           <h2 id="title"></h2>
           <p id="uploader" class="muted"></p>
+          <p id="playlist-note" class="playlist-note" hidden>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+            </svg>
+            This is a playlist — showing the first video only
+          </p>
         </div>
       </div>
 

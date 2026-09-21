@@ -301,6 +301,21 @@ input[type="text"]::placeholder {
     border-radius: var(--radius-sm);
     background: var(--surface-2);
     display: block;
+    transition: opacity 0.15s ease;
+}
+
+.thumb-wrap.is-loading #thumb {
+    opacity: 0;
+}
+
+.thumb-wrap.is-loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(100deg, var(--surface-2) 30%, var(--border) 50%, var(--surface-2) 70%);
+    background-size: 400% 100%;
+    animation: skeleton-shimmer 1.4s ease infinite;
 }
 
 .duration-badge {
@@ -339,6 +354,20 @@ input[type="text"]::placeholder {
 .muted {
     color: var(--muted);
     font-size: 0.85rem;
+}
+
+.playlist-note {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+    color: var(--gold);
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+.playlist-note svg {
+    flex-shrink: 0;
 }
 
 .format-block {
@@ -466,6 +495,11 @@ select option {
 @keyframes indeterminate {
     0%   { margin-left: -35%; }
     100% { margin-left: 100%; }
+}
+
+@keyframes skeleton-shimmer {
+    0%   { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
 }
 
 .progress-meta {

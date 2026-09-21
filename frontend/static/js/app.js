@@ -10,10 +10,12 @@
     const modeBtns = document.querySelectorAll('.mode-btn');
 
     const resultSection = document.getElementById('result');
+    const thumbWrap = document.querySelector('.thumb-wrap');
     const thumbEl = document.getElementById('thumb');
     const durationBadge = document.getElementById('duration');
     const titleEl = document.getElementById('title');
     const uploaderEl = document.getElementById('uploader');
+    const playlistNote = document.getElementById('playlist-note');
     const formatSelect = document.getElementById('format-select');
     const formatBadges = document.getElementById('format-badges');
     const downloadBtn = document.getElementById('download');
@@ -215,8 +217,8 @@
 
         setFetching(true);
         setStatus('Fetching video info…');
-        resultSection.hidden = true;
         progressWrap.hidden = true;
+        showResultSkeleton();
 
         try {
             const res = await fetch('/api/info', {
@@ -241,9 +243,22 @@
                 ? 'Could not reach the server — check your connection'
                 : (err.message || 'Could not fetch that link');
             setStatus(message, 'error');
+            resultSection.hidden = true;
         } finally {
+            thumbWrap.classList.remove('is-loading');
             setFetching(false);
         }
+    }
+
+    function showResultSkeleton() {
+        resultSection.hidden = false;
+        thumbWrap.classList.add('is-loading');
+        titleEl.textContent = '';
+        uploaderEl.textContent = '';
+        playlistNote.hidden = true;
+        durationBadge.hidden = true;
+        formatBadges.hidden = true;
+        formatSelect.innerHTML = '';
     }
 
     function renderInfo(data) {
@@ -253,6 +268,7 @@
         thumbEl.alt = data.title ? `Thumbnail for ${data.title}` : 'Video thumbnail';
         durationBadge.textContent = formatDuration(data.duration);
         durationBadge.hidden = data.duration === undefined || data.duration === null;
+        playlistNote.hidden = !data.is_playlist;
     }
 
     function populateFormats() {

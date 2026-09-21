@@ -126,7 +126,8 @@ class Downloader:
         if info is None:
             raise ValueError("Could not read video info for that link")
 
-        if info.get("_type") == "playlist":
+        is_playlist = info.get("_type") == "playlist"
+        if is_playlist:
             entries = info.get("entries") or []
             if not entries:
                 raise ValueError("That link points to a playlist, not a single video")
@@ -184,6 +185,7 @@ class Downloader:
             "thumbnail": info.get("thumbnail"),
             "uploader": info.get("uploader"),
             "formats": formats,
+            "is_playlist": is_playlist,
         }
 
     def download(self, url: str, format_id: str, mode: str = "video", progress_hook=None, should_cancel=None):
