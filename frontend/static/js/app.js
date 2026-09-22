@@ -35,11 +35,6 @@
 
     const toastEl = document.getElementById('toast');
 
-    const themeBtn = document.getElementById('theme-btn');
-    const themeIconDark = document.getElementById('theme-icon-dark');
-    const themeIconLight = document.getElementById('theme-icon-light');
-    const themeColorMeta = document.getElementById('theme-color-meta');
-
     const historyBtn = document.getElementById('history-btn');
     const historyPanel = document.getElementById('history-panel');
     const historyCloseBtn = document.getElementById('history-close-btn');
@@ -49,13 +44,11 @@
 
     const STORAGE_KEYS = {
         MODE: 'magpie:mode',
-        THEME: 'magpie:theme',
         HISTORY: 'magpie:history',
         MP4_ONLY: 'magpie:mp4-only',
         MAX_QUALITY: 'magpie:max-quality',
     };
 
-    const THEME_COLORS = { dark: '#15171a', light: '#f4f2ee' };
     const HISTORY_LIMIT = 20;
     const RECENT_SUGGESTIONS_LIMIT = 6;
 
@@ -224,29 +217,12 @@
         formatFilters.hidden = mode !== 'video';
     }
 
-    function applyTheme(theme) {
-        document.documentElement.setAttribute('data-theme', theme);
-        themeColorMeta.setAttribute('content', THEME_COLORS[theme] || THEME_COLORS.dark);
-        themeIconDark.hidden = theme === 'light';
-        themeIconLight.hidden = theme !== 'light';
-    }
-
-    themeBtn.addEventListener('click', () => {
-        const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-        const next = current === 'light' ? 'dark' : 'light';
-        applyTheme(next);
-        writeStorage(STORAGE_KEYS.THEME, next);
-    });
-
     (function loadPreferences() {
         const savedMode = readStorage(STORAGE_KEYS.MODE);
         if (savedMode === 'audio' || savedMode === 'video') {
             mode = savedMode;
         }
         applyModeToUI();
-
-        const savedTheme = readStorage(STORAGE_KEYS.THEME);
-        applyTheme(savedTheme === 'light' ? 'light' : 'dark');
 
         mp4OnlyCheckbox.checked = readStorage(STORAGE_KEYS.MP4_ONLY) === 'true';
         const savedMaxQuality = readStorage(STORAGE_KEYS.MAX_QUALITY);
