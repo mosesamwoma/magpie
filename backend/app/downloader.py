@@ -202,7 +202,9 @@ class Downloader:
                 "preferredquality": "192",
             }]
         else:
-            base_opts["format"] = f"{format_id}+bestaudio/best" if format_id else "bestvideo+bestaudio/best"
+            base_opts["format"] = (
+                f"{format_id}+bestaudio/best/{format_id}" if format_id else "bestvideo+bestaudio/best"
+            )
             base_opts["merge_output_format"] = "mp4"
 
         def hook(d):
@@ -258,3 +260,10 @@ class Downloader:
                 os.remove(p)
             except OSError:
                 pass
+
+    def version(self) -> str:
+        try:
+            from yt_dlp.version import __version__
+            return __version__
+        except ImportError:
+            return "unknown"

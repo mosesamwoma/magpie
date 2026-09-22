@@ -8,12 +8,20 @@ from yt_dlp.utils import DownloadCancelled
 
 from .downloader import Downloader
 from .jobs import job_store
+from .ratelimit import RateLimiter
 from .utils import is_valid_url
 
 bp = Blueprint("main", __name__)
 dl = Downloader()
 
 _PROGRESS_PUSH_INTERVAL = 0.2
+
+_info_limiter = RateLimiter(max_requests=20, window_seconds=60)
+_download_limiter = RateLimiter(max_requests=10, window_seconds=60)
+
+
+def _client_key() -> str:
+    return request.remote_addr or "unknown"
 
 
 @bp.route("/")
@@ -23,7 +31,7 @@ def index():
 
 @bp.route("/api/health")
 def api_health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "yt_dlp_version": dl.version()})
 
 
 @bp.app_errorhandler(413)
@@ -33,6 +41,9 @@ def request_too_large(_e):
 
 @bp.route("/api/info", methods=["POST"])
 def api_info():
+    if not _info_limiter.allow(_client_key()):
+        return jsonify({"error": "Too many requests — slow down a bit"}), 429
+
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").strip()
 
@@ -49,6 +60,9 @@ def api_info():
 
 @bp.route("/api/download", methods=["POST"])
 def api_download():
+    if not _download_limiter.allow(_client_key()):
+        return jsonify({"error": "Too many requests — slow down a bit"}), 429
+
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").strip()
     format_id = (data.get("format_id") or "").strip()

@@ -12,11 +12,20 @@ video — or strip it down to just the audio as an MP3.
   would otherwise produce a silent file
 - Live progress pushed over Server-Sent Events — real byte counts, speed, and ETA
   while the file downloads
-- Cancel an in-progress download
+- Cancel an in-progress download — including a download that's cancelled in the
+  instant before it's assigned a job ID
 - Codec and container badges next to the quality picker (H.264, AV1, Opus, AAC, etc.)
 - Remembers your last-used mode and quality in the browser
+- Pasting a link auto-fetches its info — no second click needed
+- Links pasted without `https://` are completed automatically
+- The browser tab title shows live download progress, so you can check on it
+  from another tab
 - Single-page frontend, no build step, no frontend framework
 - Automatic cleanup of old downloads and abandoned jobs after a configurable time
+- Basic per-IP rate limiting on the info and download endpoints, so one client
+  can't hammer the server
+- `/api/health` reports the installed yt-dlp version, so you can tell at a
+  glance whether it's due for an update
 - Optional cookie authentication (a portable `cookies.txt`, or auto-detection across
   every major browser) to avoid YouTube's bot-detection errors
 - Docker and docker-compose support, ffmpeg included
@@ -101,10 +110,23 @@ for, so it doesn't happen inside one:
    speak SSE).
 3. `POST /api/cancel/<job_id>` sets a flag the download thread checks on its
    next progress tick; yt-dlp aborts cleanly via its own `DownloadCancelled`
-   mechanism and any partial file is deleted.
+   mechanism and any partial file is deleted. The frontend queues a cancel
+   request even if it's clicked before the job ID comes back, so it's never
+   silently dropped.
 4. Once the job's status is `finished`, the page fetches `GET /api/file/<job_id>`,
    and the browser's own download manager takes it from there. The job entry
    (and eventually the file itself) is cleaned up afterward.
+
+`GET /api/health` returns `{"status": "ok", "yt_dlp_version": "<version>"}` —
+useful for a quick check that the service is up and which yt-dlp release it's
+running.
+
+Both `POST /api/info` (20 requests/minute) and `POST /api/download`
+(10 requests/minute) are rate-limited per client IP; requests over the limit
+get a `429` with a short error message. This is in-memory and per-process, in
+keeping with the rest of the job store — fine for a single personal instance,
+not meant as a substitute for a real edge rate limiter if you expose this
+publicly.
 
 ## Keeping it working: update yt-dlp regularly
 
@@ -129,7 +151,8 @@ docker compose up -d
 `pip install -r requirements.txt --upgrade` always pulls the latest — but a
 Docker image bakes in whatever version was current at build time, so it won't
 update itself. Rebuild every couple of weeks, or immediately if downloads
-suddenly start failing.
+suddenly start failing. `GET /api/health` shows you the currently running
+version if you want to confirm an update took effect.
 
 ## Notes
 
@@ -137,7 +160,7 @@ suddenly start failing.
   instance. If you run multiple gunicorn workers, downloads and progress
   requests for the same job need to land on the same worker; keep it to a
   single worker/thread unless you swap the job store for something shared
-  (Redis, etc.).
+  (Redis, etc.). The rate limiter has the same per-process limitation.
 - If you put this behind a reverse proxy (nginx, Cloudflare, etc.), make sure
   it doesn't buffer or time out long-lived SSE connections — nginx in
   particular needs `proxy_buffering off;` on the `/api/progress/*/stream`

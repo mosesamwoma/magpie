@@ -31,12 +31,14 @@
     const STORAGE_KEYS = { MODE: 'magpie:mode' };
 
     const PROGRESS_STALE_MS = 45000;
+    const DEFAULT_TITLE = document.title;
 
     let mode = 'video';
     let currentInfo = null;
     let toastTimer = null;
     let activeJobId = null;
     let isFetchingInfo = false;
+    let cancelQueued = false;
 
     function readStorage(key) {
         try {
@@ -101,6 +103,14 @@
         } catch {
             return false;
         }
+    }
+
+    function normalizeUrlInput(str) {
+        const trimmed = str.trim();
+        if (!trimmed) return trimmed;
+        if (isLikelyUrl(trimmed)) return trimmed;
+        const withScheme = `https://${trimmed}`;
+        return isLikelyUrl(withScheme) ? withScheme : trimmed;
     }
 
     function isBusy() {
@@ -178,11 +188,12 @@
             return;
         }
         try {
-            const text = (await navigator.clipboard.readText()).trim();
+            const text = normalizeUrlInput(await navigator.clipboard.readText());
             if (!text) return;
             urlInput.value = text;
             clearBtn.hidden = false;
             urlInput.focus();
+            if (isLikelyUrl(text) && !isBusy()) fetchInfo();
         } catch {
             showToast('Could not read clipboard — paste manually', 'error');
         }
@@ -199,7 +210,8 @@
     });
 
     async function fetchInfo() {
-        const url = urlInput.value.trim();
+        const url = normalizeUrlInput(urlInput.value);
+        urlInput.value = url;
 
         if (!url) {
             setStatus('Paste a link first', 'error');
@@ -351,6 +363,7 @@
         }
 
         activeJobId = 'pending';
+        cancelQueued = false;
         syncControls();
         progressWrap.hidden = false;
         cancelBtn.hidden = false;
@@ -372,6 +385,7 @@
 
             const { job_id: jobId } = await res.json();
             activeJobId = jobId;
+            if (cancelQueued) requestCancel(jobId);
             await trackProgress(jobId);
 
             setStatus('');
@@ -391,6 +405,8 @@
         } finally {
             cancelBtn.hidden = true;
             activeJobId = null;
+            cancelQueued = false;
+            document.title = DEFAULT_TITLE;
             syncControls();
             setTimeout(() => { progressWrap.hidden = true; }, 900);
         }
@@ -454,14 +470,19 @@
         });
     }
 
-    cancelBtn.addEventListener('click', async () => {
-        if (!activeJobId || activeJobId === 'pending') return;
+    function requestCancel(jobId) {
+        return fetch(`/api/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+    }
+
+    cancelBtn.addEventListener('click', () => {
+        if (!activeJobId) return;
         cancelBtn.disabled = true;
         setStatus('Cancelling…');
-        try {
-            await fetch(`/api/cancel/${activeJobId}`, { method: 'POST' });
-        } catch {
+        if (activeJobId === 'pending') {
+            cancelQueued = true;
+            return;
         }
+        requestCancel(activeJobId);
     });
 
     function renderProgress(data) {
@@ -476,20 +497,24 @@
             if (Number.isFinite(data.eta)) parts.push(`ETA ${formatDuration(data.eta)}`);
             progressSize.textContent = parts.join(' · ');
             setStatus('Downloading…');
+            document.title = `${pct}% · ${DEFAULT_TITLE}`;
         } else if (data.status === 'downloading') {
             setProgress(null);
             progressSize.textContent = downloaded ? formatBytes(downloaded) : '';
             setStatus('Downloading…');
+            document.title = DEFAULT_TITLE;
         } else if (data.status === 'processing') {
             setProgress(100);
             progressSize.textContent = '';
             setStatus(mode === 'audio' ? 'Converting to MP3…' : 'Merging video and audio…');
+            document.title = `Finishing up · ${DEFAULT_TITLE}`;
         } else if (data.status === 'cancelling') {
             progressSize.textContent = '';
             setStatus('Cancelling…');
         } else if (data.status === 'finished') {
             setProgress(100);
-            progressSize.textContent = '';
+            progressSize.textContent = total ? formatBytes(total) : '';
+            document.title = DEFAULT_TITLE;
         } else {
             setProgress(null);
             setStatus('Starting download…');
