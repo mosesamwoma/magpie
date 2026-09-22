@@ -8,6 +8,7 @@
     const statusEl = document.getElementById('status');
     const modeToggle = document.querySelector('.mode-toggle');
     const modeBtns = document.querySelectorAll('.mode-btn');
+    const recentList = document.getElementById('recent-list');
 
     const resultSection = document.getElementById('result');
     const thumbWrap = document.querySelector('.thumb-wrap');
@@ -19,6 +20,12 @@
     const formatSelect = document.getElementById('format-select');
     const formatBadges = document.getElementById('format-badges');
     const downloadBtn = document.getElementById('download');
+    const copyTitleBtn = document.getElementById('copy-title-btn');
+    const copyThumbBtn = document.getElementById('copy-thumb-btn');
+
+    const formatFilters = document.getElementById('format-filters');
+    const mp4OnlyCheckbox = document.getElementById('mp4-only');
+    const maxQualitySelect = document.getElementById('max-quality');
 
     const progressWrap = document.getElementById('progress-wrap');
     const progressBar = document.getElementById('progress-bar');
@@ -28,7 +35,29 @@
 
     const toastEl = document.getElementById('toast');
 
-    const STORAGE_KEYS = { MODE: 'magpie:mode' };
+    const themeBtn = document.getElementById('theme-btn');
+    const themeIconDark = document.getElementById('theme-icon-dark');
+    const themeIconLight = document.getElementById('theme-icon-light');
+    const themeColorMeta = document.getElementById('theme-color-meta');
+
+    const historyBtn = document.getElementById('history-btn');
+    const historyPanel = document.getElementById('history-panel');
+    const historyCloseBtn = document.getElementById('history-close-btn');
+    const historyList = document.getElementById('history-list');
+    const historyEmpty = document.getElementById('history-empty');
+    const historyClearBtn = document.getElementById('history-clear-btn');
+
+    const STORAGE_KEYS = {
+        MODE: 'magpie:mode',
+        THEME: 'magpie:theme',
+        HISTORY: 'magpie:history',
+        MP4_ONLY: 'magpie:mp4-only',
+        MAX_QUALITY: 'magpie:max-quality',
+    };
+
+    const THEME_COLORS = { dark: '#15171a', light: '#f4f2ee' };
+    const HISTORY_LIMIT = 20;
+    const RECENT_SUGGESTIONS_LIMIT = 6;
 
     const PROGRESS_STALE_MS = 45000;
     const DEFAULT_TITLE = document.title;
@@ -36,6 +65,7 @@
     let mode = 'video';
     let currentInfo = null;
     let toastTimer = null;
+    let rateLimitTimer = null;
     let activeJobId = null;
     let isFetchingInfo = false;
     let cancelQueued = false;
@@ -55,6 +85,17 @@
         }
     }
 
+    function readJSONStorage(key, fallback) {
+        const raw = readStorage(key);
+        if (!raw) return fallback;
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : fallback;
+        } catch {
+            return fallback;
+        }
+    }
+
     function qualityStorageKey(m) {
         return `magpie:quality:${m}`;
     }
@@ -66,6 +107,7 @@
 
     function showToast(msg, type) {
         clearTimeout(toastTimer);
+        clearInterval(rateLimitTimer);
         toastEl.textContent = msg;
         toastEl.className = 'toast is-visible' + (type ? ` ${type}` : '');
         toastEl.hidden = false;
@@ -73,6 +115,42 @@
             toastEl.classList.remove('is-visible');
             setTimeout(() => { toastEl.hidden = true; }, 200);
         }, 3200);
+    }
+
+    function showRateLimitToast(retryAfterSeconds) {
+        clearTimeout(toastTimer);
+        clearInterval(rateLimitTimer);
+        let remaining = Math.max(1, Math.ceil(retryAfterSeconds || 1));
+
+        const render = () => {
+            toastEl.textContent = `Slow down — try again in ${remaining}s`;
+            toastEl.className = 'toast is-visible error';
+            toastEl.hidden = false;
+        };
+
+        render();
+        rateLimitTimer = setInterval(() => {
+            remaining -= 1;
+            if (remaining <= 0) {
+                clearInterval(rateLimitTimer);
+                toastEl.classList.remove('is-visible');
+                setTimeout(() => { toastEl.hidden = true; }, 200);
+                return;
+            }
+            render();
+        }, 1000);
+    }
+
+    function formatRelativeTime(timestamp) {
+        const diffMs = Date.now() - timestamp;
+        const minutes = Math.floor(diffMs / 60000);
+        if (minutes < 1) return 'just now';
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        if (days < 7) return `${days}d ago`;
+        return new Date(timestamp).toLocaleDateString();
     }
 
     function formatDuration(totalSeconds) {
@@ -143,7 +221,22 @@
             b.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
         modeToggle.dataset.active = mode;
+        formatFilters.hidden = mode !== 'video';
     }
+
+    function applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        themeColorMeta.setAttribute('content', THEME_COLORS[theme] || THEME_COLORS.dark);
+        themeIconDark.hidden = theme === 'light';
+        themeIconLight.hidden = theme !== 'light';
+    }
+
+    themeBtn.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+        const next = current === 'light' ? 'dark' : 'light';
+        applyTheme(next);
+        writeStorage(STORAGE_KEYS.THEME, next);
+    });
 
     (function loadPreferences() {
         const savedMode = readStorage(STORAGE_KEYS.MODE);
@@ -151,10 +244,156 @@
             mode = savedMode;
         }
         applyModeToUI();
+
+        const savedTheme = readStorage(STORAGE_KEYS.THEME);
+        applyTheme(savedTheme === 'light' ? 'light' : 'dark');
+
+        mp4OnlyCheckbox.checked = readStorage(STORAGE_KEYS.MP4_ONLY) === 'true';
+        const savedMaxQuality = readStorage(STORAGE_KEYS.MAX_QUALITY);
+        if (savedMaxQuality) maxQualitySelect.value = savedMaxQuality;
     })();
+
+    mp4OnlyCheckbox.addEventListener('change', () => {
+        writeStorage(STORAGE_KEYS.MP4_ONLY, String(mp4OnlyCheckbox.checked));
+        if (currentInfo) populateFormats();
+    });
+
+    maxQualitySelect.addEventListener('change', () => {
+        writeStorage(STORAGE_KEYS.MAX_QUALITY, maxQualitySelect.value);
+        if (currentInfo) populateFormats();
+    });
+
+    function readHistory() {
+        return readJSONStorage(STORAGE_KEYS.HISTORY, []);
+    }
+
+    function addHistoryEntry(entry) {
+        const list = readHistory().filter((item) => item.url !== entry.url);
+        list.unshift(entry);
+        writeStorage(STORAGE_KEYS.HISTORY, JSON.stringify(list.slice(0, HISTORY_LIMIT)));
+    }
+
+    function useHistoryEntry(url) {
+        urlInput.value = url;
+        clearBtn.hidden = false;
+        recentList.hidden = true;
+        historyPanel.hidden = true;
+        if (!isBusy()) fetchInfo();
+    }
+
+    function renderRecentList() {
+        const entries = readHistory().slice(0, RECENT_SUGGESTIONS_LIMIT);
+        recentList.innerHTML = '';
+        entries.forEach((entry) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'recent-item';
+
+            if (entry.thumbnail) {
+                const img = document.createElement('img');
+                img.src = entry.thumbnail;
+                img.alt = '';
+                btn.appendChild(img);
+            }
+
+            const textWrap = document.createElement('span');
+            textWrap.className = 'recent-item-text';
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'recent-item-title';
+            titleSpan.textContent = entry.title || entry.url;
+            const urlSpan = document.createElement('span');
+            urlSpan.className = 'recent-item-url';
+            urlSpan.textContent = entry.url;
+            textWrap.appendChild(titleSpan);
+            textWrap.appendChild(urlSpan);
+            btn.appendChild(textWrap);
+
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                useHistoryEntry(entry.url);
+            });
+            recentList.appendChild(btn);
+        });
+        return entries.length > 0;
+    }
+
+    urlInput.addEventListener('focus', () => {
+        if (urlInput.value.length === 0 && renderRecentList()) {
+            recentList.hidden = false;
+        }
+    });
+
+    urlInput.addEventListener('blur', () => {
+        setTimeout(() => { recentList.hidden = true; }, 150);
+    });
+
+    function renderHistoryPanel() {
+        const entries = readHistory();
+        historyList.innerHTML = '';
+        historyEmpty.hidden = entries.length > 0;
+        historyList.hidden = entries.length === 0;
+
+        entries.forEach((entry) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'history-item';
+
+            if (entry.thumbnail) {
+                const img = document.createElement('img');
+                img.src = entry.thumbnail;
+                img.alt = '';
+                btn.appendChild(img);
+            }
+
+            const textWrap = document.createElement('span');
+            textWrap.className = 'history-item-text';
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'history-item-title';
+            titleSpan.textContent = entry.title || entry.url;
+            const metaSpan = document.createElement('span');
+            metaSpan.className = 'history-item-meta';
+            const modeSpan = document.createElement('span');
+            modeSpan.className = 'history-item-mode';
+            modeSpan.textContent = entry.mode === 'audio' ? 'MP3' : 'Video';
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'history-item-time';
+            timeSpan.textContent = formatRelativeTime(entry.timestamp);
+            metaSpan.appendChild(modeSpan);
+            metaSpan.appendChild(timeSpan);
+            textWrap.appendChild(titleSpan);
+            textWrap.appendChild(metaSpan);
+            btn.appendChild(textWrap);
+
+            btn.addEventListener('click', () => useHistoryEntry(entry.url));
+            historyList.appendChild(btn);
+        });
+    }
+
+    historyBtn.addEventListener('click', () => {
+        renderHistoryPanel();
+        historyPanel.hidden = false;
+    });
+
+    historyCloseBtn.addEventListener('click', () => { historyPanel.hidden = true; });
+
+    historyPanel.addEventListener('click', (e) => {
+        if (e.target === historyPanel) historyPanel.hidden = true;
+    });
+
+    historyClearBtn.addEventListener('click', () => {
+        writeStorage(STORAGE_KEYS.HISTORY, '[]');
+        renderHistoryPanel();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !historyPanel.hidden) {
+            historyPanel.hidden = true;
+        }
+    });
 
     urlInput.addEventListener('input', () => {
         clearBtn.hidden = urlInput.value.length === 0;
+        if (urlInput.value.length > 0) recentList.hidden = true;
     });
 
     urlInput.addEventListener('keydown', (e) => {
@@ -192,6 +431,7 @@
             if (!text) return;
             urlInput.value = text;
             clearBtn.hidden = false;
+            recentList.hidden = true;
             urlInput.focus();
             if (isLikelyUrl(text) && !isBusy()) fetchInfo();
         } catch {
@@ -241,6 +481,10 @@
 
             if (!res.ok) {
                 const errBody = await res.json().catch(() => ({}));
+                if (res.status === 429) {
+                    showRateLimitToast(errBody.retry_after);
+                    throw new Error('RATE_LIMITED');
+                }
                 throw new Error(errBody.error || `Server responded with ${res.status}`);
             }
 
@@ -251,11 +495,16 @@
             setStatus('');
             resultSection.hidden = false;
         } catch (err) {
-            const message = err instanceof TypeError
-                ? 'Could not reach the server — check your connection'
-                : (err.message || 'Could not fetch that link');
-            setStatus(message, 'error');
-            resultSection.hidden = true;
+            if (err.message === 'RATE_LIMITED') {
+                setStatus('Too many requests — slow down a bit', 'error');
+                resultSection.hidden = true;
+            } else {
+                const message = err instanceof TypeError
+                    ? 'Could not reach the server — check your connection'
+                    : (err.message || 'Could not fetch that link');
+                setStatus(message, 'error');
+                resultSection.hidden = true;
+            }
         } finally {
             thumbWrap.classList.remove('is-loading');
             setFetching(false);
@@ -283,17 +532,60 @@
         playlistNote.hidden = !data.is_playlist;
     }
 
+    copyTitleBtn.addEventListener('click', async () => {
+        if (!currentInfo?.title || !navigator.clipboard?.writeText) return;
+        try {
+            await navigator.clipboard.writeText(currentInfo.title);
+            showToast('Title copied', 'success');
+        } catch {
+            showToast('Could not copy title', 'error');
+        }
+    });
+
+    copyThumbBtn.addEventListener('click', async () => {
+        if (!currentInfo?.thumbnail) return;
+        try {
+            if (navigator.clipboard?.write && window.ClipboardItem) {
+                const response = await fetch(currentInfo.thumbnail);
+                const blob = await response.blob();
+                await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+                showToast('Thumbnail copied', 'success');
+                return;
+            }
+            throw new Error('unsupported');
+        } catch {
+            try {
+                await navigator.clipboard.writeText(currentInfo.thumbnail);
+                showToast('Thumbnail link copied', 'success');
+            } catch {
+                showToast('Could not copy thumbnail', 'error');
+            }
+        }
+    });
+
     function populateFormats() {
         if (!currentInfo) return;
 
         const all = currentInfo.formats || [];
-        const list = all.filter((f) => f.type === mode);
+        let list = all.filter((f) => f.type === mode);
+
+        if (mode === 'video') {
+            if (mp4OnlyCheckbox.checked) {
+                list = list.filter((f) => f.ext === 'mp4');
+            }
+            const maxHeight = parseInt(maxQualitySelect.value, 10);
+            if (Number.isFinite(maxHeight)) {
+                list = list.filter((f) => !f.height || f.height <= maxHeight);
+            }
+        }
 
         formatSelect.innerHTML = '';
 
         if (list.length === 0) {
             const opt = document.createElement('option');
-            opt.textContent = mode === 'audio' ? 'No audio formats available' : 'No video formats available';
+            opt.textContent = all.filter((f) => f.type === mode).length > 0
+                ? 'No formats match your filters'
+                : (mode === 'audio' ? 'No audio formats available' : 'No video formats available');
             opt.disabled = true;
             opt.selected = true;
             formatSelect.appendChild(opt);
@@ -380,6 +672,10 @@
 
             if (!res.ok) {
                 const errBody = await res.json().catch(() => ({}));
+                if (res.status === 429) {
+                    showRateLimitToast(errBody.retry_after);
+                    throw new Error('RATE_LIMITED');
+                }
                 throw new Error(errBody.error || `Server responded with ${res.status}`);
             }
 
@@ -390,11 +686,20 @@
 
             setStatus('');
             showToast('Download complete', 'success');
+            addHistoryEntry({
+                url,
+                title: currentInfo.title || url,
+                thumbnail: currentInfo.thumbnail || '',
+                mode,
+                timestamp: Date.now(),
+            });
             triggerFileDownload(jobId);
         } catch (err) {
             if (err.message === 'CANCELLED') {
                 setStatus('Download cancelled');
                 showToast('Download cancelled');
+            } else if (err.message === 'RATE_LIMITED') {
+                setStatus('Too many requests — slow down a bit', 'error');
             } else {
                 const message = err instanceof TypeError
                     ? 'Lost connection to the server'

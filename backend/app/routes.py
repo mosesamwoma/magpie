@@ -24,6 +24,14 @@ def _client_key() -> str:
     return request.remote_addr or "unknown"
 
 
+def _rate_limited(limiter: RateLimiter, key: str):
+    retry_after = round(limiter.retry_after(key), 1)
+    response = jsonify({"error": "Too many requests — slow down a bit", "retry_after": retry_after})
+    response.status_code = 429
+    response.headers["Retry-After"] = str(max(1, round(retry_after)))
+    return response
+
+
 @bp.route("/")
 def index():
     return render_template("index.html")
@@ -41,8 +49,9 @@ def request_too_large(_e):
 
 @bp.route("/api/info", methods=["POST"])
 def api_info():
-    if not _info_limiter.allow(_client_key()):
-        return jsonify({"error": "Too many requests — slow down a bit"}), 429
+    client_key = _client_key()
+    if not _info_limiter.allow(client_key):
+        return _rate_limited(_info_limiter, client_key)
 
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").strip()
@@ -60,8 +69,9 @@ def api_info():
 
 @bp.route("/api/download", methods=["POST"])
 def api_download():
-    if not _download_limiter.allow(_client_key()):
-        return jsonify({"error": "Too many requests — slow down a bit"}), 429
+    client_key = _client_key()
+    if not _download_limiter.allow(client_key):
+        return _rate_limited(_download_limiter, client_key)
 
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").strip()

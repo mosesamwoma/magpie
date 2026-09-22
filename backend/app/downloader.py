@@ -173,6 +173,7 @@ class Downloader:
                 "filesize": f.get("filesize") or f.get("filesize_approx"),
                 "type": fmt_type,
                 "codec": codec,
+                "height": f.get("height") if not is_audio_only else None,
             })
 
         return {
