@@ -11,6 +11,8 @@ CLEANUP_AFTER_MINUTES = int(os.getenv("CLEANUP_AFTER_MINUTES", 30))
 FLASK_PORT = int(os.getenv("FLASK_PORT", 5000))
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "False").lower() == "true"
 
+MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH_KB", 16)) * 1024
+
 COOKIES_FILE = os.getenv("COOKIES_FILE", "").strip() or None
 if COOKIES_FILE and not os.path.isabs(COOKIES_FILE):
     COOKIES_FILE = os.path.join(BASE_DIR, COOKIES_FILE)

@@ -87,19 +87,15 @@ class Downloader:
 
     def _run_with_cookie_fallback(self, run_once):
         variants = list(self._cookie_variants())
-        last_error = None
         for i, extra in enumerate(variants):
             try:
                 return run_once(extra)
             except DownloadCancelled:
                 raise
-            except Exception as e:
-                last_error = e
+            except Exception:
                 if i == len(variants) - 1:
                     raise
                 continue
-        if last_error:
-            raise last_error
 
     def _raise_friendly_error(self, e: Exception):
         if isinstance(e, DownloadError) and "Sign in to confirm" in str(e):

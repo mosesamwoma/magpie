@@ -21,6 +21,16 @@ def index():
     return render_template("index.html")
 
 
+@bp.route("/api/health")
+def api_health():
+    return jsonify({"status": "ok"})
+
+
+@bp.app_errorhandler(413)
+def request_too_large(_e):
+    return jsonify({"error": "Request body too large"}), 413
+
+
 @bp.route("/api/info", methods=["POST"])
 def api_info():
     data = request.get_json(silent=True) or {}
@@ -81,7 +91,7 @@ def api_download():
         elif status == "started":
             job_store.update(job_id, status="processing")
         elif status == "error":
-            job_store.update(job_id, status="error", error="Download failed")
+            job_store.update(job_id, status="error", error=d.get("error") or "Download failed")
 
     def run():
         try:

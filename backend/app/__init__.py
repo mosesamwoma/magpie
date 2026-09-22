@@ -4,7 +4,7 @@ import threading
 from flask import Flask
 
 from .cleanup import cleanup_old_files
-from .config import CLEANUP_AFTER_MINUTES
+from .config import CLEANUP_AFTER_MINUTES, MAX_CONTENT_LENGTH
 from .jobs import job_store
 from .routes import bp
 
@@ -46,6 +46,7 @@ def create_app():
         static_url_path="/static",
     )
 
+    app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
     app.register_blueprint(bp)
 
     is_reloader_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
