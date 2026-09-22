@@ -52,6 +52,7 @@ cp .env.example .env
 | `CLEANUP_AFTER_MINUTES` | `30`        | Auto-delete files (and abandoned jobs) older than this                                                   |
 | `FLASK_PORT`            | `5000`      | Port the app runs on                                                                                      |
 | `FLASK_DEBUG`           | `False`     | Flask debug mode — leave off in production                                                                |
+| `MAX_CONTENT_LENGTH_KB` | `16`        | Max size (in KB) of an incoming API request body                                                          |
 | `COOKIES_FILE`          | *(empty)*   | Path to a `cookies.txt` file — portable across OS and browser, recommended if you need cookies at all     |
 | `COOKIES_FROM_BROWSER`  | *(empty)*   | `auto` to try every installed browser automatically, or a specific one (`chrome`, `firefox`, etc.) — ignored if `COOKIES_FILE` is set. Leave empty on a headless server with no browser installed; `auto` will otherwise probe 8 browser cookie stores (and log an error for each) on every request. |
 
