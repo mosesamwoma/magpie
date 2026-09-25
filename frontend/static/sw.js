@@ -1,12 +1,13 @@
 'use strict';
 
 const CACHE_VERSION = 'magpie-v1';
-const OFFLINE_URL = '/static/offline.html';
+const OFFLINE_URL = '/offline';
 
 const PRECACHE_URLS = [
     '/',
     OFFLINE_URL,
     '/static/css/style.css',
+    '/static/css/offline.css',
     '/static/js/app.js',
     '/static/manifest.webmanifest',
 ];

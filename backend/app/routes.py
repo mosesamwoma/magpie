@@ -52,6 +52,11 @@ def index():
     return render_template("index.html")
 
 
+@bp.route("/offline")
+def offline():
+    return render_template("offline.html")
+
+
 @bp.route("/api/health")
 def api_health():
     return jsonify({
