@@ -8,11 +8,15 @@ from typing import Optional
 import yt_dlp
 from yt_dlp.utils import DownloadCancelled, DownloadError
 
-from .config import COOKIES_FILE, COOKIES_FROM_BROWSER, DOWNLOAD_DIR, MAX_FILESIZE_MB
+from .config import (
+    COOKIES_FILE,
+    COOKIES_FROM_BROWSER,
+    DOWNLOAD_DIR,
+    MAX_FILESIZE_MB,
+    YOUTUBE_PLAYER_CLIENTS,
+)
 
 logger = logging.getLogger("magpie.downloader")
-
-_YOUTUBE_PLAYER_CLIENTS = ["tv", "web_safari", "android", "web"]
 
 _INCOMPLETE_SUFFIXES = (".part", ".ytdl", ".temp")
 
@@ -74,7 +78,7 @@ class Downloader:
         return writable_path
 
     def _base_opts(self) -> dict:
-        return {
+        opts = {
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
@@ -83,10 +87,10 @@ class Downloader:
             "extractor_retries": 3,
             "retries": 5,
             "fragment_retries": 5,
-            "extractor_args": {
-                "youtube": {"player_client": _YOUTUBE_PLAYER_CLIENTS},
-            },
         }
+        if YOUTUBE_PLAYER_CLIENTS:
+            opts["extractor_args"] = {"youtube": {"player_client": YOUTUBE_PLAYER_CLIENTS}}
+        return opts
 
     def _cookie_variants(self):
         if self._writable_cookies_file:
@@ -183,10 +187,11 @@ class Downloader:
             if f.get("vcodec") == "none" and f.get("acodec") == "none":
                 continue
 
-            if f.get("language") is not None and (f.get("language_preference") or -1) < 0:
-                continue
-
             is_audio_only = f.get("vcodec") == "none"
+            has_audio = is_audio_only or f.get("acodec") not in (None, "none")
+
+            if has_audio and f.get("language") is not None and (f.get("language_preference") or -1) < 0:
+                continue
 
             if is_audio_only:
                 abr = f.get("abr")

@@ -49,6 +49,10 @@ COOKIES_FROM_BROWSER = (os.getenv("COOKIES_FROM_BROWSER", "").strip() or None)
 if COOKIES_FROM_BROWSER:
     COOKIES_FROM_BROWSER = COOKIES_FROM_BROWSER.lower()
 
+YOUTUBE_PLAYER_CLIENTS = [
+    c.strip() for c in os.getenv("YOUTUBE_PLAYER_CLIENTS", "").split(",") if c.strip()
+]
+
 CONFIG_WARNINGS = []
 
 
