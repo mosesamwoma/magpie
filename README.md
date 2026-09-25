@@ -125,11 +125,13 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-`requirements.txt` intentionally does not pin a yt-dlp version, so
+`requirements.txt` pins only a minimum yt-dlp version (`>=`), so
 `pip install -r requirements.txt --upgrade` always pulls the latest — but a
 Docker image bakes in whatever version was current at build time, so it won't
 update itself. Rebuild every couple of weeks, or immediately if downloads
-suddenly start failing.
+suddenly start failing. If you keep hitting "Could not process that link"
+after updating, it's almost always this — run `pip install -U yt-dlp` (or
+rebuild the Docker image) before looking anywhere else.
 
 ## Notes
 

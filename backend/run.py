@@ -1,6 +1,12 @@
+import logging
 import os
 from app import create_app
 from app.config import FLASK_DEBUG, FLASK_PORT
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 app = create_app()
 

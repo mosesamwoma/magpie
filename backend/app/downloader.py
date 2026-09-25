@@ -1,4 +1,5 @@
 import glob
+import logging
 import os
 import shutil
 import uuid
@@ -8,6 +9,10 @@ import yt_dlp
 from yt_dlp.utils import DownloadCancelled, DownloadError
 
 from .config import COOKIES_FILE, COOKIES_FROM_BROWSER, DOWNLOAD_DIR, MAX_FILESIZE_MB
+
+logger = logging.getLogger("magpie.downloader")
+
+_YOUTUBE_PLAYER_CLIENTS = ["tv", "web_safari", "android", "web"]
 
 _INCOMPLETE_SUFFIXES = (".part", ".ytdl", ".part-Frag", ".temp")
 
@@ -66,6 +71,13 @@ class Downloader:
             "no_warnings": True,
             "noplaylist": True,
             "noprogress": True,
+            "geo_bypass": True,
+            "extractor_retries": 3,
+            "retries": 5,
+            "fragment_retries": 5,
+            "extractor_args": {
+                "youtube": {"player_client": _YOUTUBE_PLAYER_CLIENTS},
+            },
         }
 
     def _cookie_variants(self):
@@ -87,22 +99,46 @@ class Downloader:
 
     def _run_with_cookie_fallback(self, run_once):
         variants = list(self._cookie_variants())
+        last_error = None
         for i, extra in enumerate(variants):
             try:
                 return run_once(extra)
             except DownloadCancelled:
                 raise
-            except Exception:
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "attempt %d/%d failed with cookie variant %r: %s",
+                    i + 1, len(variants), extra, e,
+                )
                 if i == len(variants) - 1:
                     raise
                 continue
+        if last_error:
+            raise last_error
 
     def _raise_friendly_error(self, e: Exception):
-        if isinstance(e, DownloadError) and "Sign in to confirm" in str(e):
+        logger.error("download/extract failed: %s", e, exc_info=True)
+
+        message = str(e)
+
+        if isinstance(e, DownloadError) and "Sign in to confirm" in message:
             raise ValueError(
-                "YouTube is blocking this request. Try refreshing the cookies file, "
-                "or this video may be temporarily unavailable from this server."
+                "YouTube is blocking this request as a bot check. Set COOKIES_FILE "
+                "(or COOKIES_FROM_BROWSER) in the backend .env to a fresh, logged-in "
+                "cookies.txt export and try again."
             ) from e
+        if "Private video" in message:
+            raise ValueError("That video is private.") from e
+        if "This video is unavailable" in message or "Video unavailable" in message:
+            raise ValueError("That video is unavailable — it may have been removed.") from e
+        if "who has blocked it in your country" in message or "not available in your country" in message:
+            raise ValueError("That video is region-locked and unavailable from this server.") from e
+        if "Unsupported URL" in message:
+            raise ValueError("That link isn't a supported video URL.") from e
+        if "429" in message or "Too Many Requests" in message:
+            raise ValueError("YouTube is rate-limiting this server right now — try again shortly.") from e
+
         raise ValueError(
             "Could not process that link. It may be private, region-locked, "
             "or temporarily blocked by YouTube."
