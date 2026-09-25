@@ -69,11 +69,18 @@ def offline():
 
 @bp.route("/api/health")
 def api_health():
+    warnings = list(CONFIG_WARNINGS)
+    if not dl.ffmpeg_available():
+        warnings.append(
+            "ffmpeg wasn't found — video downloads above the lowest quality "
+            "and audio/MP3 downloads will fail. Install ffmpeg or check the "
+            "imageio-ffmpeg package."
+        )
     return jsonify({
         "status": "ok",
         "yt_dlp_version": dl.version(),
         "max_filesize_mb": MAX_FILESIZE_MB,
-        "warnings": CONFIG_WARNINGS,
+        "warnings": warnings,
     })
 
 

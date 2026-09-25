@@ -62,10 +62,37 @@ def _codec_label(codec: Optional[str], labels) -> Optional[str]:
     return codec.split(".")[0].upper()
 
 
+def _resolve_ffmpeg_location() -> Optional[str]:
+    """Find an ffmpeg binary for yt-dlp to use.
+
+    yt-dlp only auto-detects ffmpeg if it's on the system PATH. We also ship
+    `imageio-ffmpeg` (a bundled, portable ffmpeg binary) as a fallback so
+    merging separate video/audio streams and extracting MP3 audio works
+    even on a machine with no system-wide ffmpeg install. Without this,
+    only formats that need no post-processing (e.g. YouTube's 360p
+    progressive stream) can ever succeed.
+    """
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return system_ffmpeg
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
 class Downloader:
     def __init__(self):
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
         self._writable_cookies_file = self._prepare_writable_cookies_file()
+        self._ffmpeg_location = _resolve_ffmpeg_location()
+        if not self._ffmpeg_location:
+            logger.warning(
+                "No ffmpeg binary found (checked PATH and imageio-ffmpeg). "
+                "Only formats requiring no merge/conversion (e.g. 360p) will work; "
+                "higher-quality video and audio (MP3) extraction will fail."
+            )
 
     def _prepare_writable_cookies_file(self) -> Optional[str]:
         if not COOKIES_FILE:
@@ -90,6 +117,8 @@ class Downloader:
         }
         if YOUTUBE_PLAYER_CLIENTS:
             opts["extractor_args"] = {"youtube": {"player_client": YOUTUBE_PLAYER_CLIENTS}}
+        if self._ffmpeg_location:
+            opts["ffmpeg_location"] = self._ffmpeg_location
         return opts
 
     def _cookie_variants(self):
@@ -310,6 +339,9 @@ class Downloader:
                 os.remove(p)
             except OSError:
                 pass
+
+    def ffmpeg_available(self) -> bool:
+        return self._ffmpeg_location is not None
 
     def version(self) -> str:
         try:
