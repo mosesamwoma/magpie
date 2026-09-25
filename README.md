@@ -45,8 +45,10 @@ video — or strip it down to just the audio as an MP3.
 ## Requirements
 
 - Python 3.9+
-- [ffmpeg](https://ffmpeg.org/) — required by yt-dlp to merge video/audio streams
-  and to convert audio to MP3
+- ffmpeg — used by yt-dlp to merge video/audio streams and convert audio to
+  MP3. Not required to install separately: the app uses a system `ffmpeg` if
+  found on `PATH`, otherwise falls back to the bundled `imageio-ffmpeg`
+  binary automatically. `GET /api/health` warns if neither is available.
 
 ## Setup
 
