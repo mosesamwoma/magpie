@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend backend
 COPY frontend frontend
 
-RUN mkdir -p /app/downloads
+RUN mkdir -p /app/downloads /app/data
 
 WORKDIR /app/backend
 

@@ -3,9 +3,21 @@ import os
 import threading
 import time
 
-from flask import Blueprint, Response, jsonify, render_template, request, send_file
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    jsonify,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+)
 from yt_dlp.utils import DownloadCancelled
 
+from . import history as history_store
+from .cache import TTLCache
+from .config import CONFIG_WARNINGS, INFO_CACHE_SECONDS, MAX_FILESIZE_MB
 from .downloader import Downloader
 from .jobs import job_store
 from .ratelimit import RateLimiter
@@ -18,6 +30,9 @@ _PROGRESS_PUSH_INTERVAL = 0.2
 
 _info_limiter = RateLimiter(max_requests=20, window_seconds=60)
 _download_limiter = RateLimiter(max_requests=10, window_seconds=60)
+_history_limiter = RateLimiter(max_requests=30, window_seconds=60)
+
+_info_cache = TTLCache(INFO_CACHE_SECONDS)
 
 
 def _client_key() -> str:
@@ -39,7 +54,44 @@ def index():
 
 @bp.route("/api/health")
 def api_health():
-    return jsonify({"status": "ok", "yt_dlp_version": dl.version()})
+    return jsonify({
+        "status": "ok",
+        "yt_dlp_version": dl.version(),
+        "max_filesize_mb": MAX_FILESIZE_MB,
+        "warnings": CONFIG_WARNINGS,
+    })
+
+
+@bp.route("/sw.js")
+def service_worker():
+    response = send_from_directory(current_app.static_folder, "sw.js")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@bp.route("/api/history", methods=["GET"])
+def api_history_list():
+    return jsonify({"entries": history_store.list_entries()})
+
+
+@bp.route("/api/history", methods=["POST"])
+def api_history_add():
+    client_key = _client_key()
+    if not _history_limiter.allow(client_key):
+        return _rate_limited(_history_limiter, client_key)
+
+    data = request.get_json(silent=True) or {}
+    entry = history_store.add_entry(data)
+    if entry is None:
+        return jsonify({"error": "A valid url is required"}), 400
+    return jsonify({"entry": entry})
+
+
+@bp.route("/api/history", methods=["DELETE"])
+def api_history_clear():
+    history_store.clear()
+    return jsonify({"status": "cleared"})
 
 
 @bp.app_errorhandler(413)
@@ -61,10 +113,17 @@ def api_info():
     if not is_valid_url(url):
         return jsonify({"error": "That doesn't look like a valid link"}), 400
 
+    cached = _info_cache.get(url)
+    if cached is not None:
+        return jsonify(cached)
+
     try:
-        return jsonify(dl.get_info(url))
+        info = dl.get_info(url)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+    _info_cache.set(url, info)
+    return jsonify(info)
 
 
 @bp.route("/api/download", methods=["POST"])

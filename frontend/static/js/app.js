@@ -42,11 +42,18 @@
     const historyEmpty = document.getElementById('history-empty');
     const historyClearBtn = document.getElementById('history-clear-btn');
 
+    const installBtn = document.getElementById('install-btn');
+    const configBanner = document.getElementById('config-banner');
+    const configBannerText = document.getElementById('config-banner-text');
+    const configBannerCloseBtn = document.getElementById('config-banner-close');
+    const footerMeta = document.getElementById('footer-meta');
+
     const STORAGE_KEYS = {
         MODE: 'magpie:mode',
         HISTORY: 'magpie:history',
         MP4_ONLY: 'magpie:mp4-only',
         MAX_QUALITY: 'magpie:max-quality',
+        CONFIG_BANNER_DISMISSED: 'magpie:config-banner-dismissed',
     };
 
     const HISTORY_LIMIT = 20;
@@ -62,6 +69,8 @@
     let activeJobId = null;
     let isFetchingInfo = false;
     let cancelQueued = false;
+    let maxFilesizeBytes = null;
+    let deferredInstallPrompt = null;
 
     function readStorage(key) {
         try {
@@ -195,7 +204,7 @@
         clearBtn.disabled = busy;
         modeBtns.forEach((b) => { b.disabled = busy; });
 
-        const hasSelectableFormat = formatSelect.options.length > 0 && !formatSelect.options[0]?.disabled;
+        const hasSelectableFormat = Array.from(formatSelect.options).some((opt) => !opt.disabled);
         downloadBtn.disabled = busy || !currentInfo || !hasSelectableFormat;
         formatSelect.disabled = busy || !hasSelectableFormat;
     }
@@ -247,6 +256,51 @@
         const list = readHistory().filter((item) => item.url !== entry.url);
         list.unshift(entry);
         writeStorage(STORAGE_KEYS.HISTORY, JSON.stringify(list.slice(0, HISTORY_LIMIT)));
+        pushHistoryToServer(entry);
+    }
+
+    async function fetchServerHistory() {
+        try {
+            const res = await fetch('/api/history');
+            if (!res.ok) return [];
+            const data = await res.json();
+            return Array.isArray(data.entries) ? data.entries : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function pushHistoryToServer(entry) {
+        fetch('/api/history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(entry),
+        }).catch(() => {});
+    }
+
+    function clearServerHistory() {
+        fetch('/api/history', { method: 'DELETE' }).catch(() => {});
+    }
+
+    function mergeHistoryEntries(localEntries, serverEntries) {
+        const byUrl = new Map();
+        [...serverEntries, ...localEntries].forEach((entry) => {
+            if (!entry || !entry.url) return;
+            const existing = byUrl.get(entry.url);
+            if (!existing || (entry.timestamp || 0) > (existing.timestamp || 0)) {
+                byUrl.set(entry.url, entry);
+            }
+        });
+        return Array.from(byUrl.values())
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+            .slice(0, HISTORY_LIMIT);
+    }
+
+    async function syncHistoryFromServer() {
+        const serverEntries = await fetchServerHistory();
+        if (serverEntries.length === 0) return;
+        const merged = mergeHistoryEntries(readHistory(), serverEntries);
+        writeStorage(STORAGE_KEYS.HISTORY, JSON.stringify(merged));
     }
 
     function useHistoryEntry(url) {
@@ -359,6 +413,7 @@
     historyClearBtn.addEventListener('click', () => {
         writeStorage(STORAGE_KEYS.HISTORY, '[]');
         renderHistoryPanel();
+        clearServerHistory();
     });
 
     document.addEventListener('keydown', (e) => {
@@ -575,14 +630,24 @@
             opt.value = fmt.id;
             const sizePart = fmt.filesize ? ` · ${formatBytes(fmt.filesize)}` : '';
             const extPart = fmt.ext ? ` (${fmt.ext})` : '';
-            opt.textContent = `${fmt.label}${extPart}${sizePart}`;
+            const isOversize = Boolean(maxFilesizeBytes && fmt.filesize && fmt.filesize > maxFilesizeBytes);
+            opt.textContent = `${fmt.label}${extPart}${sizePart}${isOversize ? ' · Too large' : ''}`;
+            if (isOversize) opt.disabled = true;
             formatSelect.appendChild(opt);
         });
+
+        if (formatSelect.options.length > 0 && formatSelect.options[0].disabled) {
+            const firstEnabled = Array.from(formatSelect.options).find((opt) => !opt.disabled);
+            if (firstEnabled) formatSelect.value = firstEnabled.value;
+        }
 
         const savedLabel = readStorage(qualityStorageKey(mode));
         if (savedLabel) {
             const match = list.find((fmt) => fmt.label === savedLabel);
-            if (match) formatSelect.value = match.id;
+            const matchOption = match
+                ? Array.from(formatSelect.options).find((opt) => opt.value === match.id)
+                : null;
+            if (matchOption && !matchOption.disabled) formatSelect.value = match.id;
         }
 
         renderFormatBadges();
@@ -823,8 +888,74 @@
         a.remove();
     }
 
+    async function loadHealth() {
+        try {
+            const res = await fetch('/api/health');
+            if (!res.ok) return;
+            const data = await res.json();
+
+            if (typeof data.max_filesize_mb === 'number' && data.max_filesize_mb > 0) {
+                maxFilesizeBytes = data.max_filesize_mb * 1024 * 1024;
+                if (currentInfo) populateFormats();
+            }
+
+            if (data.yt_dlp_version) {
+                footerMeta.textContent = `yt-dlp v${data.yt_dlp_version} · checked at ${new Date().toLocaleTimeString()}`;
+                footerMeta.hidden = false;
+            }
+
+            if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+                const signature = data.warnings.join('|');
+                if (readStorage(STORAGE_KEYS.CONFIG_BANNER_DISMISSED) !== signature) {
+                    configBannerText.textContent = data.warnings.join(' ');
+                    configBanner.dataset.signature = signature;
+                    configBanner.hidden = false;
+                }
+            }
+        } catch {
+        }
+    }
+
+    configBannerCloseBtn.addEventListener('click', () => {
+        writeStorage(STORAGE_KEYS.CONFIG_BANNER_DISMISSED, configBanner.dataset.signature || '');
+        configBanner.hidden = true;
+    });
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        installBtn.hidden = false;
+    });
+
+    installBtn.addEventListener('click', async () => {
+        if (!deferredInstallPrompt) return;
+        installBtn.disabled = true;
+        deferredInstallPrompt.prompt();
+        try {
+            await deferredInstallPrompt.userChoice;
+        } catch {
+        }
+        deferredInstallPrompt = null;
+        installBtn.hidden = true;
+        installBtn.disabled = false;
+    });
+
+    window.addEventListener('appinstalled', () => {
+        installBtn.hidden = true;
+        deferredInstallPrompt = null;
+        showToast('Magpie installed', 'success');
+    });
+
     fetchBtn.addEventListener('click', fetchInfo);
     downloadBtn.addEventListener('click', startDownload);
 
     syncControls();
+    loadHealth();
+    syncHistoryFromServer();
 })();

@@ -8,4 +8,5 @@ services:
         required: false
     volumes:
       - ./downloads:/app/downloads
+      - ./data:/app/data
     restart: unless-stopped
