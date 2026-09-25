@@ -33,3 +33,4 @@ htmlcov/
 Thumbs.db
 # Logs
 *.log
+.kilo/
