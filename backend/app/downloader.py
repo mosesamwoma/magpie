@@ -14,7 +14,15 @@ logger = logging.getLogger("magpie.downloader")
 
 _YOUTUBE_PLAYER_CLIENTS = ["tv", "web_safari", "android", "web"]
 
-_INCOMPLETE_SUFFIXES = (".part", ".ytdl", ".part-Frag", ".temp")
+_INCOMPLETE_SUFFIXES = (".part", ".ytdl", ".temp")
+
+_INCOMPLETE_MARKER = ".part-Frag"
+
+
+def _is_incomplete_file(path: str) -> bool:
+    name = os.path.basename(path)
+    return name.endswith(_INCOMPLETE_SUFFIXES) or _INCOMPLETE_MARKER in name
+
 
 _AUTO_BROWSERS = (
     "chrome", "edge", "brave", "chromium", "firefox", "vivaldi", "opera", "safari",
@@ -284,7 +292,7 @@ class Downloader:
     def _find_finished_file(self, file_id: str) -> Optional[str]:
         candidates = [
             p for p in glob.glob(os.path.join(DOWNLOAD_DIR, f"{file_id}_*"))
-            if os.path.isfile(p) and not p.endswith(_INCOMPLETE_SUFFIXES)
+            if os.path.isfile(p) and not _is_incomplete_file(p)
         ]
         if not candidates:
             return None

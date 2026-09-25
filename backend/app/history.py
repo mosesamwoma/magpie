@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import threading
 import time
@@ -60,7 +61,11 @@ def _sanitize_entry(raw: dict) -> Optional[dict]:
     thumbnail = _clean_string(raw.get("thumbnail"), _MAX_URL_LEN)
 
     timestamp = raw.get("timestamp")
-    if not isinstance(timestamp, (int, float)) or isinstance(timestamp, bool):
+    if (
+        isinstance(timestamp, bool)
+        or not isinstance(timestamp, (int, float))
+        or not math.isfinite(timestamp)
+    ):
         timestamp = time.time() * 1000
     timestamp = int(timestamp)
 
@@ -74,14 +79,15 @@ def _sanitize_entry(raw: dict) -> Optional[dict]:
 
 
 def add_entry(raw: dict) -> Optional[dict]:
-    """Validate, sanitize and persist one history entry. Returns the stored
-    entry, or None if the input didn't contain a usable URL."""
     entry = _sanitize_entry(raw)
     if entry is None:
         return None
 
     with _LOCK:
-        entries = [e for e in _read_all() if e.get("url") != entry["url"]]
+        entries = [
+            e for e in _read_all()
+            if isinstance(e, dict) and e.get("url") != entry["url"]
+        ]
         entries.insert(0, entry)
         entries = entries[:HISTORY_LIMIT]
         _write_all(entries)

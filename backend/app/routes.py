@@ -39,6 +39,16 @@ def _client_key() -> str:
     return request.remote_addr or "unknown"
 
 
+def _str_field(data: dict, key: str, default: str = "") -> str:
+    value = data.get(key)
+    return value.strip() if isinstance(value, str) else default
+
+
+def _json_body() -> dict:
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
 def _rate_limited(limiter: RateLimiter, key: str):
     retry_after = round(limiter.retry_after(key), 1)
     response = jsonify({"error": "Too many requests — slow down a bit", "retry_after": retry_after})
@@ -69,8 +79,6 @@ def api_health():
 
 @bp.route("/sw.js")
 def service_worker():
-    # The worker file lives in the static js folder but is served from /sw.js so
-    # its default scope covers the whole app rather than just /static/js/.
     response = send_from_directory(current_app.static_folder, "js/sw.js")
     response.headers["Service-Worker-Allowed"] = "/"
     response.headers["Cache-Control"] = "no-cache"
@@ -88,7 +96,7 @@ def api_history_add():
     if not _history_limiter.allow(client_key):
         return _rate_limited(_history_limiter, client_key)
 
-    data = request.get_json(silent=True) or {}
+    data = _json_body()
     entry = history_store.add_entry(data)
     if entry is None:
         return jsonify({"error": "A valid url is required"}), 400
@@ -112,8 +120,8 @@ def api_info():
     if not _info_limiter.allow(client_key):
         return _rate_limited(_info_limiter, client_key)
 
-    data = request.get_json(silent=True) or {}
-    url = (data.get("url") or "").strip()
+    data = _json_body()
+    url = _str_field(data, "url")
 
     if not url:
         return jsonify({"error": "URL is required"}), 400
@@ -139,10 +147,10 @@ def api_download():
     if not _download_limiter.allow(client_key):
         return _rate_limited(_download_limiter, client_key)
 
-    data = request.get_json(silent=True) or {}
-    url = (data.get("url") or "").strip()
-    format_id = (data.get("format_id") or "").strip()
-    mode = (data.get("mode") or "video").strip().lower()
+    data = _json_body()
+    url = _str_field(data, "url")
+    format_id = _str_field(data, "format_id")
+    mode = _str_field(data, "mode", "video").lower()
 
     if not url:
         return jsonify({"error": "URL is required"}), 400

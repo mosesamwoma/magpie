@@ -4,7 +4,7 @@ import threading
 from flask import Flask
 
 from .cleanup import cleanup_old_files
-from .config import CLEANUP_AFTER_MINUTES, MAX_CONTENT_LENGTH
+from .config import CLEANUP_AFTER_MINUTES, FLASK_DEBUG, MAX_CONTENT_LENGTH
 from .jobs import job_store
 from .routes import bp
 
@@ -50,7 +50,7 @@ def create_app():
     app.register_blueprint(bp)
 
     is_reloader_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
-    if not app.debug or is_reloader_child:
+    if not FLASK_DEBUG or is_reloader_child:
         _start_cleanup_scheduler()
 
     return app
