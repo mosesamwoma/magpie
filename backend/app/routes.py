@@ -69,7 +69,9 @@ def api_health():
 
 @bp.route("/sw.js")
 def service_worker():
-    response = send_from_directory(current_app.static_folder, "sw.js")
+    # The worker file lives in the static js folder but is served from /sw.js so
+    # its default scope covers the whole app rather than just /static/js/.
+    response = send_from_directory(current_app.static_folder, "js/sw.js")
     response.headers["Service-Worker-Allowed"] = "/"
     response.headers["Cache-Control"] = "no-cache"
     return response

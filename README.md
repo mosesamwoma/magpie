@@ -158,8 +158,9 @@ below.
 
 ## PWA / offline support
 
-The manifest, icons, and a service worker (`/sw.js`, served at the root so it
-can control the whole app rather than just `/static/`) make Magpie
+The manifest, icons, and a service worker (`frontend/static/js/sw.js`, served
+at the root URL `/sw.js` so it can control the whole app rather than just
+`/static/`) make Magpie
 installable from the browser's "Install app" prompt. The service worker
 precaches the app shell (HTML, CSS, JS, manifest) and an offline fallback
 page, and serves that fallback if a page navigation fails while offline. It
