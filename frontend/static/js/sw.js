@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_VERSION = 'magpie-v1';
+const CACHE_VERSION = 'magpie-v2';
 const OFFLINE_URL = '/offline';
 
 const PRECACHE_URLS = [
@@ -50,13 +50,15 @@ self.addEventListener('fetch', (event) => {
 
     if (url.pathname.startsWith('/static/')) {
         event.respondWith(
-            caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-                if (response.ok) {
-                    const responseClone = response.clone();
-                    caches.open(CACHE_VERSION).then((cache) => cache.put(request, responseClone));
-                }
-                return response;
-            }))
+            fetch(request)
+                .then((response) => {
+                    if (response.ok) {
+                        const responseClone = response.clone();
+                        caches.open(CACHE_VERSION).then((cache) => cache.put(request, responseClone));
+                    }
+                    return response;
+                })
+                .catch(() => caches.match(request).then((cached) => cached || Response.error()))
         );
     }
 });

@@ -205,7 +205,14 @@ def api_download():
                 progress_hook=on_progress,
                 should_cancel=lambda: job_store.is_cancelled(job_id),
             )
-            job_store.update(job_id, status="finished", percent=100, filepath=path, filename=filename)
+            if job_store.is_cancelled(job_id):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                job_store.update(job_id, status="cancelled", error=None)
+            else:
+                job_store.update(job_id, status="finished", percent=100, filepath=path, filename=filename)
         except DownloadCancelled:
             job_store.update(job_id, status="cancelled", error=None)
         except Exception as e:
@@ -252,7 +259,6 @@ def api_progress_stream(job_id):
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
         },
     )
 

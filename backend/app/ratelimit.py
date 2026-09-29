@@ -22,6 +22,10 @@ class RateLimiter:
             if len(hits) >= self._max_requests:
                 return False
             hits.append(now)
+            if len(self._hits) > 1024:
+                stale_keys = [k for k, v in self._hits.items() if not v or now - v[-1] > self._window_seconds]
+                for k in stale_keys:
+                    del self._hits[k]
             return True
 
     def retry_after(self, key: str) -> float:

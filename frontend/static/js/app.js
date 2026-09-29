@@ -65,7 +65,10 @@
     let mode = 'video';
     let currentInfo = null;
     let toastTimer = null;
+    let toastHideTimer = null;
     let rateLimitTimer = null;
+    let progressHideTimer = null;
+    let currentUrl = '';
     let activeJobId = null;
     let isFetchingInfo = false;
     let cancelQueued = false;
@@ -107,20 +110,25 @@
         statusEl.className = 'status' + (type ? ` ${type}` : '');
     }
 
+    function hideToast() {
+        toastEl.classList.remove('is-visible');
+        clearTimeout(toastHideTimer);
+        toastHideTimer = setTimeout(() => { toastEl.hidden = true; }, 200);
+    }
+
     function showToast(msg, type) {
         clearTimeout(toastTimer);
+        clearTimeout(toastHideTimer);
         clearInterval(rateLimitTimer);
         toastEl.textContent = msg;
         toastEl.className = 'toast is-visible' + (type ? ` ${type}` : '');
         toastEl.hidden = false;
-        toastTimer = setTimeout(() => {
-            toastEl.classList.remove('is-visible');
-            setTimeout(() => { toastEl.hidden = true; }, 200);
-        }, 3200);
+        toastTimer = setTimeout(hideToast, 3200);
     }
 
     function showRateLimitToast(retryAfterSeconds) {
         clearTimeout(toastTimer);
+        clearTimeout(toastHideTimer);
         clearInterval(rateLimitTimer);
         let remaining = Math.max(1, Math.ceil(retryAfterSeconds || 1));
 
@@ -135,8 +143,7 @@
             remaining -= 1;
             if (remaining <= 0) {
                 clearInterval(rateLimitTimer);
-                toastEl.classList.remove('is-visible');
-                setTimeout(() => { toastEl.hidden = true; }, 200);
+                hideToast();
                 return;
             }
             render();
@@ -448,6 +455,7 @@
         urlInput.focus();
         resultSection.hidden = true;
         currentInfo = null;
+        currentUrl = '';
         setStatus('');
         syncControls();
     }
@@ -498,6 +506,8 @@
             return;
         }
 
+        currentInfo = null;
+        currentUrl = '';
         setFetching(true);
         setStatus('Fetching video info…');
         progressWrap.hidden = true;
@@ -521,6 +531,7 @@
 
             const data = await res.json();
             currentInfo = data;
+            currentUrl = url;
             renderInfo(data);
             populateFormats();
             setStatus('');
@@ -556,7 +567,11 @@
     function renderInfo(data) {
         titleEl.textContent = data.title || 'Untitled';
         uploaderEl.textContent = data.uploader || '';
-        thumbEl.src = data.thumbnail || '';
+        if (data.thumbnail) {
+            thumbEl.src = data.thumbnail;
+        } else {
+            thumbEl.removeAttribute('src');
+        }
         thumbEl.alt = data.title ? `Thumbnail for ${data.title}` : 'Video thumbnail';
         durationBadge.textContent = formatDuration(data.duration);
         durationBadge.hidden = data.duration === undefined || data.duration === null;
@@ -685,9 +700,9 @@
     });
 
     async function startDownload() {
-        if (!currentInfo || isBusy()) return;
+        if (!currentInfo || !currentUrl || isBusy()) return;
 
-        const url = urlInput.value.trim();
+        const url = currentUrl;
         const formatId = formatSelect.value;
 
         if (!formatId) {
@@ -697,6 +712,7 @@
 
         activeJobId = 'pending';
         cancelQueued = false;
+        clearTimeout(progressHideTimer);
         syncControls();
         progressWrap.hidden = false;
         cancelBtn.hidden = false;
@@ -754,7 +770,7 @@
             cancelQueued = false;
             document.title = DEFAULT_TITLE;
             syncControls();
-            setTimeout(() => { progressWrap.hidden = true; }, 900);
+            progressHideTimer = setTimeout(() => { progressWrap.hidden = true; }, 900);
         }
     }
 

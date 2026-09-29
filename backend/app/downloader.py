@@ -63,15 +63,6 @@ def _codec_label(codec: Optional[str], labels) -> Optional[str]:
 
 
 def _resolve_ffmpeg_location() -> Optional[str]:
-    """Find an ffmpeg binary for yt-dlp to use.
-
-    yt-dlp only auto-detects ffmpeg if it's on the system PATH. We also ship
-    `imageio-ffmpeg` (a bundled, portable ffmpeg binary) as a fallback so
-    merging separate video/audio streams and extracting MP3 audio works
-    even on a machine with no system-wide ffmpeg install. Without this,
-    only formats that need no post-processing (e.g. YouTube's 360p
-    progressive stream) can ever succeed.
-    """
     system_ffmpeg = shutil.which("ffmpeg")
     if system_ffmpeg:
         return system_ffmpeg
@@ -111,6 +102,8 @@ class Downloader:
             "noplaylist": True,
             "noprogress": True,
             "geo_bypass": True,
+            "playlistend": 1,
+            "updatetime": False,
             "extractor_retries": 3,
             "retries": 5,
             "fragment_retries": 5,
@@ -201,12 +194,12 @@ class Downloader:
 
         is_playlist = info.get("_type") == "playlist"
         if is_playlist:
-            entries = info.get("entries") or []
+            entries = [e for e in (info.get("entries") or []) if e]
             if not entries:
                 raise ValueError("That link points to a playlist, not a single video")
             info = entries[0]
 
-        raw_formats = info.get("formats", [])
+        raw_formats = info.get("formats") or []
         raw_formats.sort(
             key=lambda f: (-(f.get("height") or 0), -(f.get("abr") or f.get("tbr") or 0))
         )
@@ -282,7 +275,7 @@ class Downloader:
             }]
         else:
             base_opts["format"] = (
-                f"{format_id}+bestaudio/best/{format_id}" if format_id else "bestvideo+bestaudio/best"
+                f"{format_id}+bestaudio/{format_id}" if format_id else "bestvideo+bestaudio/best"
             )
             base_opts["merge_output_format"] = "mp4"
 
